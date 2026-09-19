@@ -2,7 +2,7 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "8008:8000"
     environment:
       # Docker service names — never localhost inside the container.
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ate}:${POSTGRES_PASSWORD:-ate_dev_password}@postgres:5432/${POSTGRES_DB:-ate}
