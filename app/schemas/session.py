@@ -1,4 +1,6 @@
-"""Session score request/response schemas."""
+"""Session score and session-read request/response schemas."""
+
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -30,3 +32,41 @@ class SessionScoreResponse(BaseModel):
     risk_tier: str
     contributing_signals: ContributingSignals
     session_id: str
+
+
+class SessionListItem(BaseModel):
+    """One row of the read-only session list (latest risk event's score/tier)."""
+
+    session_id: str
+    user_id: str
+    risk_score: int
+    risk_tier: str
+    device_fingerprint: str
+    ip_address: str
+    timestamp: datetime
+
+
+class SessionListResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    sessions: list[SessionListItem]
+
+
+class SessionHistoryEntry(BaseModel):
+    """A per-risk-event history entry for a session (chronological)."""
+
+    event: str
+    timestamp: datetime
+
+
+class SessionDetailResponse(BaseModel):
+    session_id: str
+    user_id: str
+    risk_score: int
+    risk_tier: str
+    contributing_signals: ContributingSignals
+    device_fingerprint: str
+    ip_address: str
+    timestamp: datetime
+    history: list[SessionHistoryEntry]

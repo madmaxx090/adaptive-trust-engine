@@ -6,7 +6,8 @@ login burst), applies a frozen rule-based baseline scorer as the decision layer,
 and persists every scored session for audit and later analysis. An Isolation
 Forest model was evaluated offline against the same rule-based reference.
 
-Status: steps 1–9 complete — infrastructure, live pipeline, frozen scorer,
+Status: steps 1–9 complete plus the read endpoints (`GET /sessions`,
+`GET /sessions/{session_id}`) — infrastructure, live pipeline, frozen scorer,
 offline experiments (baseline + Isolation Forest), extended test suite, and the
 step 9 hardening fixes. This document is the authoritative current-state
 reference; `README.md` reflects the earlier skeleton phase.
@@ -68,7 +69,8 @@ ate/
 │   ├── main.py                  FastAPI app; CORS (localhost dev origins); mounts routers
 │   ├── api/
 │   │   ├── health.py            GET /health -> {"status": "ok"}
-│   │   └── session.py           POST /session/score; sanitized 503 mapping (step 9)
+│   │   └── session.py           POST /session/score; sanitized 503 mapping (step 9);
+│   │                            read-only GET /sessions + GET /sessions/{session_id}
 │   ├── core/
 │   │   ├── config.py            Pydantic Settings: DATABASE_URL, REDIS_URL, GEOIP_DB_PATH, CORS_ORIGINS
 │   │   └── database.py          Sync SQLAlchemy engine + SessionLocal (psycopg2)
@@ -82,7 +84,8 @@ ate/
 │   │   └── base.py              declarative Base
 │   ├── schemas/
 │   │   ├── health.py            health response model
-│   │   └── session.py           request/response models; min/max length constraints (step 9)
+│   │   └── session.py           request/response models; min/max length constraints
+│   │                            (step 9); session-read response schemas
 │   └── services/
 │       ├── risk_pipeline.py     live orchestration: signals -> score -> persist -> Redis;
 │       │                        race-safe find-or-create (step 9)
@@ -92,7 +95,7 @@ ate/
 │       └── geo.py               GeoLite2 lookup + haversine geo-velocity computation
 ├── alembic/
 │   └── versions/0001_initial_schema.py   initial migration: users, sessions, risk_events, audit_log
-├── tests/                       41 tests (baked into the api image)
+├── tests/                       50 tests (baked into the api image)
 ├── evaluate_baseline.py         FROZEN offline baseline evaluation script
 ├── baseline_results.json        FROZEN baseline experiment results
 ├── ml_results.json              FROZEN Isolation Forest experiment results
@@ -151,6 +154,13 @@ Endpoints (host port 8008 → container 8000):
 
 - `GET  http://localhost:8008/health`
 - `POST http://localhost:8008/session/score`
+- `GET  http://localhost:8008/sessions` — read-only list, newest first;
+  `page` (≥ 1, default 1), `limit` (1–100, default 20), optional `risk_tier`
+  (low/medium/high) filtered on each session's latest risk event; only scored
+  sessions appear (event-less rows are excluded by design).
+- `GET  http://localhost:8008/sessions/{session_id}` — read-only detail:
+  latest event's score/tier/signals plus a chronological per-risk-event
+  history; 404 for unknown (or event-less) sessions.
 
 Fresh database (tables are created by Alembic):
 
@@ -173,7 +183,7 @@ docker compose build api
 docker compose up -d api
 ```
 
-Test suite layout (41 tests):
+Test suite layout (50 tests):
 
 - `tests/test_health.py` (1) — health endpoint.
 - `tests/test_session_score.py` (2) — scorer/session-store unit tests.
@@ -183,6 +193,10 @@ Test suite layout (41 tests):
 - `tests/test_endpoint_validation.py` (24) — engineered tier boundaries,
   signal combinations, malformed input (422 vs scored-200), 503 sanitization,
   and real-HTTP concurrency (10 simultaneous requests, fresh and existing user).
+- `tests/test_sessions_endpoints.py` (9) — read endpoints: list ground truth
+  (independent ORM mirror), pagination partition, tier filter, 422/404
+  contracts, detail vs persisted row, latest-event selection + per-event
+  history, event-less exclusion.
 
 Some tests use a fake geolocation (documented monkeypatch) to keep results
 deterministic; concurrency tests fire real HTTP at the in-container uvicorn
@@ -265,8 +279,6 @@ Suite after step 9: `41 passed, 0 xfailed` (run inside the stack).
 
 ## 7. Remaining roadmap
 
-- **`GET /sessions` and `GET /sessions/{id}`** — read endpoints for session
-  history and single-session detail (for the dashboard).
 - **CORS** — dev-origin middleware already present (`config.cors_origins`);
   extend/review origins for the dashboard integration and production.
 - **IEEE-CIS validation** — evaluate the pipeline/scorer on the public
