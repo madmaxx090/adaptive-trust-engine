@@ -1,5 +1,7 @@
 """Session scoring route: live risk signals via the frozen baseline scorer."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.session import (
@@ -15,6 +17,15 @@ from app.services.risk_pipeline import (
 
 router = APIRouter(tags=["session"])
 
+logger = logging.getLogger(__name__)
+
+# Fixed, generic client-facing body for infrastructure failures: never expose
+# SQL statements, table/column/constraint names, exception details, or other
+# database internals (those are logged server-side only).
+SERVICE_UNAVAILABLE_DETAIL = (
+    "Scoring service temporarily unavailable. Please try again later."
+)
+
 
 @router.post("/session/score", response_model=SessionScoreResponse)
 def score_session(payload: SessionScoreRequest) -> SessionScoreResponse:
@@ -27,8 +38,10 @@ def score_session(payload: SessionScoreRequest) -> SessionScoreResponse:
             refresh_token=payload.refresh_token,
         )
     except (GeoIPDatabaseUnavailableError, RiskPipelineUnavailableError) as exc:
-        # Infrastructure unavailable -> 503 with a descriptive reason.
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        # Infrastructure unavailable -> 503. The full underlying exception
+        # (including driver SQL/constraint details) is logged server-side only.
+        logger.exception("Scoring temporarily unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE_DETAIL) from exc
 
     return SessionScoreResponse(
         risk_score=outcome.risk_score,

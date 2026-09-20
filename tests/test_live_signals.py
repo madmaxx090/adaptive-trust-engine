@@ -262,7 +262,10 @@ def test_missing_geolite2_database_returns_503(
         "/session/score", json=_payload(user_id, ip_address="1.1.1.1")
     )
     assert response.status_code == 503
-    assert "does-not-exist.mmdb" in response.json()["detail"]
+    # Fixed generic body: no server paths, SQL, or database internals leak.
+    assert response.json() == {
+        "detail": "Scoring service temporarily unavailable. Please try again later."
+    }
     assert _session_count(user_id) == 1  # only the seeded previous session
 
 
@@ -367,7 +370,10 @@ def test_postgres_persistence_failure_returns_503(
 
     response = client.post("/session/score", json=_payload(user_id))
     assert response.status_code == 503
-    assert "PostgreSQL" in response.json()["detail"]
+    # Fixed generic body: the driver/exception details stay server-side only.
+    assert response.json() == {
+        "detail": "Scoring service temporarily unavailable. Please try again later."
+    }
     assert redis_updates == []  # Redis post-writes never attempted
     assert _session_count(user_id) == 0  # nothing partially persisted
 

@@ -1,12 +1,15 @@
 """Session score request/response schemas."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SessionScoreRequest(BaseModel):
-    user_id: str
-    ip_address: str
-    device_fingerprint: str
+    # Length constraints only: empty and oversized values are rejected; a
+    # malformed-but-non-empty IP is NOT a validation error (it still flows to
+    # the geo layer and is scored as "invalid_ip").
+    user_id: str = Field(min_length=1, max_length=255)
+    ip_address: str = Field(min_length=1, max_length=45)
+    device_fingerprint: str = Field(min_length=1, max_length=255)
     # Optional live refresh token: enables token-reuse detection against the
     # user's previous session (SHA-256 server-side; only hashes are stored).
     refresh_token: str | None = None

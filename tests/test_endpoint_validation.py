@@ -10,14 +10,16 @@ behavior). This module adds:
   frozen formula -> expected score/tier -> API response -> persisted
   risk_events row (including the unrounded score);
 - malformed/invalid-input tests (422 validation, malformed IPs, garbage
-  tokens), with xfail(strict=True) markers for the two KNOWN GAPS where the
-  desired 422 behavior does not exist yet (empty strings, oversized user_id);
+  tokens); empty strings and oversized values are rejected by the explicit
+  min_length/max_length constraints on the request schema;
 - concurrency tests firing real HTTP requests at the running in-container
   uvicorn (Dockerfile: port 8000; the compose 8008:8000 mapping is host-side)
   via ThreadPoolExecutor + a Barrier, asserting API-vs-database consistency;
-  the fresh-user variant registers a conditional xfail when the known
-  find-or-create 503 race reproduces, with the observed status distribution
-  in the reason;
+  the fresh-user variant is the regression lock for the fixed find-or-create
+  race (all 200 responses, single user row);
+- a test forcing a real persistence IntegrityError and asserting that the
+  503 body exposes no SQL/table/constraint details (full error logged
+  server-side only);
 - a test documenting the rounded-display-score vs unrounded-tier mismatch.
 
 Runs inside the Docker Compose stack against the real Postgres and Redis
@@ -130,9 +132,10 @@ def _seed_previous_session(
     device_fingerprint: str,
     ip_address: str,
     last_seen_at: datetime,
+    session_id: str | None = None,
 ) -> str:
     """Insert the user (if absent) plus one previous session; return its id."""
-    session_id = str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())
     with SessionLocal() as db:
         user = db.execute(
             select(User).where(User.user_id == user_id)
@@ -194,6 +197,20 @@ def _risk_event_count_for_user(user_id: str) -> int:
             .join(User, Session.user_id == User.id)
             .where(User.user_id == user_id)
         ).scalar_one()
+
+
+def _session_count(user_id: str) -> int:
+    with SessionLocal() as db:
+        user = db.execute(
+            select(User).where(User.user_id == user_id)
+        ).scalar_one_or_none()
+        if user is None:
+            return 0
+        return len(
+            db.execute(select(Session).where(Session.user_id == user.id))
+            .scalars()
+            .all()
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -653,15 +670,9 @@ def test_validation_wrong_types_return_422_and_no_writes(user_id: str) -> None:
     assert _user_row_count(user_id) == 0
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN GAP")
-def test_empty_string_fields_return_422_known_gap() -> None:
-    """Desired: empty strings for required fields are rejected with 422.
-
-    KNOWN GAP: the schema declares plain `str` fields with no min_length, so
-    "" passes validation; the current implementation scores the request (200)
-    and persists it under user "". xfail(strict=True) turns this into a red
-    suite if the gap is closed without removing the marker.
-    """
+def test_empty_string_fields_return_422() -> None:
+    """Empty strings violate the schema's explicit min_length=1 constraints
+    on all three required fields -> 422 and nothing persisted."""
     cleanup_user("")  # remove leftovers from any earlier failed run
     try:
         events_before = _risk_event_count_total()
@@ -677,15 +688,10 @@ def test_empty_string_fields_return_422_known_gap() -> None:
         cleanup_user("")
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN GAP")
-def test_oversized_user_id_returns_422_known_gap() -> None:
-    """Desired: an oversized user_id (5000 chars) is rejected with 422.
-
-    KNOWN GAP: no length validation exists anywhere (unlimited varchar
-    columns), so the current implementation scores the request (200) and
-    persists it. xfail(strict=True) turns this into a red suite if the gap is
-    closed without removing the marker.
-    """
+def test_oversized_user_id_returns_422() -> None:
+    """A 5000-char user_id exceeds the schema's max_length=255 -> 422 and
+    nothing persisted (DB columns stay unbounded; enforcement is schema-level
+    only)."""
     long_user_id = "u" * 5000
     cleanup_user(long_user_id)
     try:
@@ -760,6 +766,78 @@ def test_garbage_refresh_token_no_crash_no_reuse(user_id: str) -> None:
     _assert_response_matches_persisted(body)
 
 
+def test_persistence_failure_returns_503_without_internal_details(
+    user_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Force a real persistence IntegrityError and verify the 503 leaks nothing.
+
+    Mechanism: pin ``uuid4`` to a fixed value and pre-seed a session row with
+    that exact session_id, so the live request's session INSERT hits the real
+    ``sessions.session_id`` unique constraint. The resulting database error
+    (SQL text, constraint name) must stay server-side only: the response body
+    is exactly the fixed generic message, nothing is persisted, and the full
+    database error is logged.
+    """
+    pinned_uuid = uuid.uuid4()
+    pinned_session_id = str(pinned_uuid)
+    _seed_previous_session(
+        user_id,
+        DOMAIN_DEVICE,
+        "192.168.1.5",
+        datetime.now(timezone.utc) - timedelta(hours=1),
+        session_id=pinned_session_id,
+    )
+    monkeypatch.setattr(uuid, "uuid4", lambda: pinned_uuid)
+
+    with caplog.at_level("ERROR"):
+        response = client.post("/session/score", json=_payload(user_id))
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Scoring service temporarily unavailable. Please try again later."
+    }
+
+    # The raw body must not contain SQL statements, table names, column names,
+    # constraint names, exception details, or database internals.
+    body_text = response.text
+    for forbidden in (
+        "INSERT",
+        "SELECT",
+        "users",
+        "sessions",
+        "risk_events",
+        "constraint",
+        "UniqueViolation",
+        "psycopg2",
+        "[SQL",
+        "DETAIL",
+        "users_user_id_key",
+        "sessions_session_id_key",
+        "Traceback",
+        pinned_session_id,
+        user_id,
+    ):
+        assert forbidden not in body_text, (
+            f"response body leaked {forbidden!r}: {body_text}"
+        )
+
+    # The real database error must be visible server-side: the meaningful
+    # constraint identifier plus a database-error indication (tolerant of
+    # exact SQLAlchemy/psycopg2 exception formatting).
+    log_text = caplog.text
+    assert "sessions_session_id_key" in log_text
+    database_error_markers = ("UniqueViolation", "duplicate key", "IntegrityError")
+    assert any(marker in log_text for marker in database_error_markers), (
+        f"no database-error indication in server log: {log_text!r}"
+    )
+
+    # Nothing persisted by the failed request: only the seeded session row.
+    assert _session_count(user_id) == 1
+    assert _risk_event_count_for_user(user_id) == 0
+
+
 # ---------------------------------------------------------------------------
 # Concurrency (real HTTP against the running in-container uvicorn)
 # ---------------------------------------------------------------------------
@@ -822,68 +900,18 @@ def _assert_concurrent_outcome(
 
 
 def test_concurrent_10_requests_fresh_user(user_id: str) -> None:
-    """10 simultaneous first-ever requests for a fresh user.
+    """10 simultaneous first-ever requests for a fresh user (race regression lock).
 
-    Success criteria: every request receives 200, exactly 10 risk events are
-    persisted, exactly one user row exists (find-or-create), session ids are
-    distinct, and each response matches its persisted row.
-
-    Known race (code inspection + runtime reproduction): the find-or-create
-    SELECT+INSERT relies on the users.user_id unique constraint without
-    retry/upsert, so racing first writes raise IntegrityError ->
-    UniqueViolation on users_user_id_key -> 503 for the losing requests.
-    Severity is timing-dependent (observed 1-6 of 10 losing across runs), so
-    the expected failure is registered *conditionally*:
-    - known race reproduced exactly -> pytest.xfail() with that run's
-      observed status distribution in the reason;
-    - client errors, unexpected statuses, mismatched 503 details, invariant
-      violations, or a clean run failing any criterion -> normal failure;
-    - clean run passing every criterion -> normal pass (no XPASS flip).
+    The find-or-create path is race-safe (INSERT ... ON CONFLICT DO NOTHING +
+    re-select), so the full success criteria must hold: every request receives
+    200, exactly 10 risk events are persisted, exactly one user row exists,
+    session ids are distinct, every response matches its persisted row, and
+    ZCARD == 10 (asserted by the shared helper).
     """
     results = _fire_concurrent(user_id, CONCURRENT_REQUESTS, "device-concurrent")
-    statuses = [status for status, _ in results]
-    assert "EXC" not in statuses, f"client-side errors: {results}"
-    unexpected = sorted(
-        {status for status in statuses if status not in ("200", "503")}
+    _assert_concurrent_outcome(
+        user_id, results, expected_events=CONCURRENT_REQUESTS
     )
-    assert not unexpected, f"unexpected statuses: {unexpected}; results: {results}"
-    distribution = dict(
-        sorted((int(status), count) for status, count in Counter(statuses).items())
-    )
-
-    # Any 503 must be exactly the known race: a losing find-or-create INSERT
-    # hitting the users.user_id unique constraint.
-    for status, body in results:
-        if status == "503":
-            detail = (body or {}).get("detail", "")
-            assert "UniqueViolation" in detail and "users_user_id_key" in detail, body
-
-    # Invariants that must hold in both outcomes: a single user row, exactly
-    # one risk event per 200 response, distinct sessions, per-response chains
-    # consistent, and one burst member per fired request (attempts are
-    # recorded before persistence, so losing requests contribute too).
-    ok_bodies = [body for status, body in results if status == "200"]
-    ok_sessions = [body["session_id"] for body in ok_bodies]
-    assert len(set(ok_sessions)) == len(ok_sessions)
-    assert _user_row_count(user_id) == 1
-    assert _risk_event_count_for_user(user_id) == len(ok_bodies)
-    for body in ok_bodies:
-        burst = body["contributing_signals"]["login_burst_count"]
-        # Burst counts are nondeterministic under true concurrency; bounds
-        # are (this attempt included, at most all attempts).
-        assert isinstance(burst, int) and 1 <= burst <= CONCURRENT_REQUESTS
-        _assert_response_matches_persisted(body)
-    assert _redis.zcard(f"ate:login_burst:{user_id}") == CONCURRENT_REQUESTS
-
-    if 503 in distribution:
-        pytest.xfail(
-            reason=(
-                "reproduces the known 503 race: losing find-or-create INSERTs hit "
-                "the users_user_id_key unique constraint (IntegrityError -> 503); "
-                f"observed status distribution: {distribution}"
-            )
-        )
-    assert distribution == {200: CONCURRENT_REQUESTS}, f"status distribution: {distribution}"
 
 
 def test_concurrent_10_requests_existing_user(user_id: str) -> None:

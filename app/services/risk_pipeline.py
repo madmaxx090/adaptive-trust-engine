@@ -33,6 +33,7 @@ from typing import Any
 
 import redis
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -246,22 +247,30 @@ def _persist_scored_session(
 ) -> str:
     """Persist user (find-or-create), session, and risk event; returns session_id.
 
+    The user row is created with INSERT ... ON CONFLICT DO NOTHING followed by
+    a re-select, which makes concurrent first-ever requests race-safe: a losing
+    INSERT waits for the winner's commit, becomes a no-op, and the re-select
+    then finds the committed row -- no IntegrityError and no retry loop. The
+    conflict target is scoped to the users.user_id unique index only, so any
+    other database error still propagates (nothing is swallowed silently).
+
     Runs in a single Postgres transaction: any failure rolls back and raises,
     and the caller never reaches the Redis update step (nothing partial).
     """
     try:
         with SessionLocal() as db:
-            user = db.execute(
-                select(User).where(User.user_id == user_id)
-            ).scalar_one_or_none()
-            if user is None:
-                user = User(user_id=user_id)
-                db.add(user)
-                db.flush()
+            db.execute(
+                pg_insert(User)
+                .values(user_id=user_id)
+                .on_conflict_do_nothing(index_elements=["user_id"])
+            )
+            user_pk = db.execute(
+                select(User.id).where(User.user_id == user_id)
+            ).scalar_one()
 
             session_row = Session(
                 session_id=str(uuid.uuid4()),
-                user_id=user.id,
+                user_id=user_pk,
                 device_fingerprint=device_fingerprint,
                 ip_address=ip_address,
                 created_at=now,
