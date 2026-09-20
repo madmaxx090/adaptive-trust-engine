@@ -12,6 +12,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      # Manual GeoLite2 database drop-in (read-only); never auto-downloaded.
+      - ./data/geoip:/app/data/geoip:ro
 
   postgres:
     image: postgres:16-alpine

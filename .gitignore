@@ -6,3 +6,6 @@ __pycache__/
 .pytest_cache/
 .vscode/
 .idea/
+
+# MaxMind GeoLite2 databases (licensed; never committed)
+data/geoip/*.mmdb

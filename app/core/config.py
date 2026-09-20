@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg2://ate:ate_dev_password@localhost:5432/ate"
     redis_url: str = "redis://localhost:6379/0"
 
+    # Offline GeoLite2 database file (placed manually; never auto-downloaded).
+    geoip_db_path: str = "data/geoip/GeoLite2-City.mmdb"
+
     # Localhost development origins only (React dashboard connects here later).
     cors_origins: list[str] = [
         "http://localhost:3000",
