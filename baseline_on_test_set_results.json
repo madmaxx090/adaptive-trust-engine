@@ -1,0 +1,99 @@
+{
+  "model": "rule_based_baseline",
+  "evaluation_set": "held_out_test_set",
+  "dataset": "ate_synthetic_dataset.csv",
+  "test_set": {
+    "session_ids_file": "ml_test_set_session_ids.json",
+    "session_ids_file_sha256": "eb1fca056b9d421c204c90baa71989fef7629909d5632a2222c5940ccac8299b",
+    "sorted_session_ids_sha256": "41dd6abc32f20171dd34db46217f99f3cfac1f9f3c5721fff613f64813c5e095",
+    "test_rows": 400
+  },
+  "sample_count": 400,
+  "class_distribution": {
+    "label_0": 320,
+    "label_1": 80,
+    "label_0_pct": 80.0,
+    "label_1_pct": 20.0
+  },
+  "weights": {
+    "geo_velocity": 0.3,
+    "device_mismatch": 0.3,
+    "token_reuse": 0.25,
+    "login_burst": 0.15
+  },
+  "normalization": {
+    "geo_velocity": "min(geo_velocity_kmh / 1000, 1) * 100",
+    "device_mismatch": "device_mismatch_score * 100",
+    "token_reuse": "100 if token_reuse_flag else 0",
+    "login_burst": "min(login_burst_count / 30, 1) * 100"
+  },
+  "risk_tiers": {
+    "low": "0-40",
+    "medium": "41-70",
+    "high": "71-100"
+  },
+  "tier_boundary_policy": "applied to unrounded scores: score <= 40.0 -> low; 40.0 < score <= 70.0 -> medium; score > 70.0 -> high",
+  "prediction_mapping": {
+    "low": 0,
+    "medium": 1,
+    "high": 1
+  },
+  "prediction_semantics": "Medium and High are treated as flagged/suspicious sessions (prediction = 1); Low is treated as non-flagged (prediction = 0).",
+  "metrics": {
+    "precision": 1.0,
+    "recall": 0.3125,
+    "f1": 0.47619047619047616,
+    "false_positive_rate": 0.0
+  },
+  "confusion_matrix": {
+    "TP": 25,
+    "FP": 0,
+    "TN": 320,
+    "FN": 55
+  },
+  "breakdown_by_attack_type": {
+    "none": {
+      "TP": 0,
+      "FP": 0,
+      "TN": 320,
+      "FN": 0
+    },
+    "credential_stuffing": {
+      "TP": 1,
+      "FP": 0,
+      "TN": 0,
+      "FN": 21
+    },
+    "device_takeover": {
+      "TP": 11,
+      "FP": 0,
+      "TN": 0,
+      "FN": 12
+    },
+    "impossible_travel": {
+      "TP": 0,
+      "FP": 0,
+      "TN": 0,
+      "FN": 15
+    },
+    "token_replay": {
+      "TP": 13,
+      "FP": 0,
+      "TN": 0,
+      "FN": 7
+    }
+  },
+  "tier_distribution": {
+    "low": 375,
+    "medium": 25,
+    "high": 0
+  },
+  "frozen_inputs": {
+    "scorer_module": "app.services.baseline_scorer",
+    "scorer_function": "score_session",
+    "scorer_sha256": "7fa30fdd3e04a01cf03b8a5a44ed6bb76beec50807f77cbe9d3a4bb97608f4dd",
+    "metrics_function": "evaluate_baseline.evaluate (imported unmodified)",
+    "metrics_module_sha256": "20c893abcd42a1e7605aa42e6c0b0984781347dfe659ef262ae1c5cb37a451ed"
+  },
+  "design_notes": "Frozen rule-based baseline (unmodified) re-applied to the Phase 5 held-out test set (the exact 400 session ids listed in ml_test_set_session_ids.json); scoring via the imported frozen score_session; metrics via the imported frozen evaluate_baseline.evaluate (identical formulas and zero-denominator policy); weights and parameters are the frozen heuristics from baseline_scorer.py."
+}

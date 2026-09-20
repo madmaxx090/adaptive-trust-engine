@@ -1,0 +1,215 @@
+{
+  "report": "baseline_vs_isolation_forest",
+  "evaluation_set": {
+    "description": "held-out test set (same 400 rows for both models)",
+    "dataset": "ate_synthetic_dataset.csv",
+    "test_set_file": "ml_test_set_session_ids.json",
+    "test_rows": 400,
+    "sorted_session_ids_sha256": "41dd6abc32f20171dd34db46217f99f3cfac1f9f3c5721fff613f64813c5e095",
+    "class_distribution": {
+      "label_0": 320,
+      "label_1": 80
+    }
+  },
+  "metrics_comparison": {
+    "precision": {
+      "baseline": 1.0,
+      "isolation_forest": 1.0,
+      "delta_ml_minus_baseline": 0.0
+    },
+    "recall": {
+      "baseline": 0.3125,
+      "isolation_forest": 0.975,
+      "delta_ml_minus_baseline": 0.6625
+    },
+    "f1": {
+      "baseline": 0.47619047619047616,
+      "isolation_forest": 0.9873417721518987,
+      "delta_ml_minus_baseline": 0.5111512959614225
+    },
+    "false_positive_rate": {
+      "baseline": 0.0,
+      "isolation_forest": 0.0,
+      "delta_ml_minus_baseline": 0.0
+    }
+  },
+  "confusion_matrix_comparison": {
+    "baseline": {
+      "TP": 25,
+      "FP": 0,
+      "TN": 320,
+      "FN": 55
+    },
+    "isolation_forest": {
+      "TP": 78,
+      "FP": 0,
+      "TN": 320,
+      "FN": 2
+    }
+  },
+  "attack_type_breakdown_comparison": {
+    "none": {
+      "n": 320,
+      "baseline": {
+        "TP": 0,
+        "FP": 0,
+        "TN": 320,
+        "FN": 0
+      },
+      "isolation_forest": {
+        "TP": 0,
+        "FP": 0,
+        "TN": 320,
+        "FN": 0
+      }
+    },
+    "credential_stuffing": {
+      "n": 22,
+      "baseline": {
+        "TP": 1,
+        "FP": 0,
+        "TN": 0,
+        "FN": 21
+      },
+      "isolation_forest": {
+        "TP": 22,
+        "FP": 0,
+        "TN": 0,
+        "FN": 0
+      }
+    },
+    "device_takeover": {
+      "n": 23,
+      "baseline": {
+        "TP": 11,
+        "FP": 0,
+        "TN": 0,
+        "FN": 12
+      },
+      "isolation_forest": {
+        "TP": 23,
+        "FP": 0,
+        "TN": 0,
+        "FN": 0
+      }
+    },
+    "impossible_travel": {
+      "n": 15,
+      "baseline": {
+        "TP": 0,
+        "FP": 0,
+        "TN": 0,
+        "FN": 15
+      },
+      "isolation_forest": {
+        "TP": 13,
+        "FP": 0,
+        "TN": 0,
+        "FN": 2
+      }
+    },
+    "token_replay": {
+      "n": 20,
+      "baseline": {
+        "TP": 13,
+        "FP": 0,
+        "TN": 0,
+        "FN": 7
+      },
+      "isolation_forest": {
+        "TP": 20,
+        "FP": 0,
+        "TN": 0,
+        "FN": 0
+      }
+    }
+  },
+  "verification": {
+    "dataset_filename": "ate_synthetic_dataset.csv",
+    "test_set_filename": "ml_test_set_session_ids.json",
+    "test_set_row_count": 400,
+    "unique_session_id_count": 400,
+    "class_distribution": {
+      "label_0": 320,
+      "label_1": 80
+    },
+    "sorted_session_ids_sha256": "41dd6abc32f20171dd34db46217f99f3cfac1f9f3c5721fff613f64813c5e095",
+    "frozen_file_sha256": {
+      "app/services/baseline_scorer.py": "7fa30fdd3e04a01cf03b8a5a44ed6bb76beec50807f77cbe9d3a4bb97608f4dd",
+      "evaluate_baseline.py": "20c893abcd42a1e7605aa42e6c0b0984781347dfe659ef262ae1c5cb37a451ed",
+      "baseline_results.json": "eaa77ae850ddad7b4b24a33d0df04fde6216a4c224f68efbdd1d83390210eace",
+      "app/services/isolation_forest_scorer.py": "4bd5cde4b861eeb56102f3570064427aa6dad19a7886d9f2a926d1060ea3ab60",
+      "evaluate_ml.py": "aca7163eb0581fcbc7f5db9e5d67b0aed1e8d9f737e4d31d80f1805bb85acae1",
+      "ml_results.json": "3efd4a691c001c781223a5df7ae1ace753be2fd6295e270a9a3b9638311e33e9",
+      "ml_test_set_session_ids.json": "eb1fca056b9d421c204c90baa71989fef7629909d5632a2222c5940ccac8299b"
+    },
+    "frozen_file_hash_verification": [
+      {
+        "file": "app/services/baseline_scorer.py",
+        "recorded_sha256": "7FA30FDD3E04A01CF03B8A5A44ED6BB76BEEC50807F77CBE9D3A4BB97608F4DD",
+        "recorded_source": "Phase 5 report",
+        "current_sha256": "7fa30fdd3e04a01cf03b8a5a44ed6bb76beec50807f77cbe9d3a4bb97608f4dd",
+        "match": true
+      },
+      {
+        "file": "evaluate_baseline.py",
+        "recorded_sha256": "20C893ABCD42A1E7605AA42E6C0B0984781347DFE659EF262AE1C5CB37A451ED",
+        "recorded_source": "Phase 5 report",
+        "current_sha256": "20c893abcd42a1e7605aa42e6c0b0984781347dfe659ef262ae1c5cb37a451ed",
+        "match": true
+      },
+      {
+        "file": "baseline_results.json",
+        "recorded_sha256": "EAA77AE850DDAD7B4B24A33D0DF04FDE6216A4C224F68EFBDD1D83390210EACE",
+        "recorded_source": "Phase 3 report (re-verified in Phase 5)",
+        "current_sha256": "eaa77ae850ddad7b4b24a33d0df04fde6216a4c224f68efbdd1d83390210eace",
+        "match": true
+      },
+      {
+        "file": "app/services/isolation_forest_scorer.py",
+        "recorded_sha256": null,
+        "recorded_source": "no prior value recorded; first recorded at Phase 6 inspection",
+        "current_sha256": "4bd5cde4b861eeb56102f3570064427aa6dad19a7886d9f2a926d1060ea3ab60",
+        "match": null
+      },
+      {
+        "file": "evaluate_ml.py",
+        "recorded_sha256": null,
+        "recorded_source": "no prior value recorded; first recorded at Phase 6 inspection",
+        "current_sha256": "aca7163eb0581fcbc7f5db9e5d67b0aed1e8d9f737e4d31d80f1805bb85acae1",
+        "match": null
+      },
+      {
+        "file": "ml_results.json",
+        "recorded_sha256": "3EFD4A691C001C781223A5DF7AE1ACE753BE2FD6295E270A9A3B9638311E33E9",
+        "recorded_source": "Phase 5 report",
+        "current_sha256": "3efd4a691c001c781223a5df7ae1ace753be2fd6295e270a9a3b9638311e33e9",
+        "match": true
+      },
+      {
+        "file": "ml_test_set_session_ids.json",
+        "recorded_sha256": "EB1FCA056B9D421C204C90BAA71989FEF7629909D5632A2222C5940CCAC8299B",
+        "recorded_source": "Phase 5 report",
+        "current_sha256": "eb1fca056b9d421c204c90baa71989fef7629909d5632a2222c5940ccac8299b",
+        "match": true
+      }
+    ],
+    "frozen_file_hash_comparison_note": "SHA-256 hex digests are case-insensitive; recorded values come from PowerShell Get-FileHash (uppercase) and current values from Python hashlib (lowercase); matching is case-insensitive.",
+    "checks": {
+      "missing_ids": 0,
+      "duplicate_dataset_matches": 0,
+      "symmetric_difference": 0,
+      "class_distribution_matches_phase5_preview": true,
+      "ml_results_consistency": {
+        "sample_count": 400,
+        "split_test_rows": 400,
+        "class_distribution_match": true,
+        "session_set_hash_in_ml_results": "not available",
+        "mismatches": []
+      }
+    },
+    "frozen_files_read_only": true,
+    "isolation_forest_rerun": false,
+    "identical_session_id_set": true
+  }
+}

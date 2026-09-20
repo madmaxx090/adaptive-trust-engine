@@ -1,0 +1,90 @@
+{
+  "model": "isolation_forest",
+  "dataset": "ate_synthetic_dataset.csv",
+  "sample_count": 400,
+  "dataset_size": 2000,
+  "class_distribution": {
+    "label_0": 320,
+    "label_1": 80,
+    "label_0_pct": 80.0,
+    "label_1_pct": 20.0
+  },
+  "features": [
+    "geo_velocity_kmh",
+    "device_mismatch_score",
+    "token_reuse_flag",
+    "login_burst_count"
+  ],
+  "feature_encoding": {
+    "token_reuse_flag": "boolean True -> 1, False -> 0"
+  },
+  "model_parameters": {
+    "contamination": 0.2,
+    "n_estimators": 100,
+    "random_state": 42
+  },
+  "anomaly_label_conversion": {
+    "sklearn -1": 1,
+    "sklearn 1": 0,
+    "note": "scikit-learn returns -1 for anomalies and 1 for normal points; mapped to the project convention 1 = flagged/suspicious, 0 = not flagged."
+  },
+  "split": {
+    "method": "train_test_split",
+    "test_size": 0.2,
+    "stratify": "label",
+    "random_state": 42,
+    "train_rows": 1600,
+    "test_rows": 400,
+    "test_session_ids_file": "ml_test_set_session_ids.json"
+  },
+  "prediction_semantics": "Prediction 1 = flagged/suspicious (sklearn anomaly, output -1); 0 = not flagged (sklearn normal, output 1).",
+  "metrics": {
+    "precision": 1.0,
+    "recall": 0.975,
+    "f1": 0.9873417721518987,
+    "false_positive_rate": 0.0
+  },
+  "confusion_matrix": {
+    "TP": 78,
+    "FP": 0,
+    "TN": 320,
+    "FN": 2
+  },
+  "breakdown_by_attack_type": {
+    "none": {
+      "TP": 0,
+      "FP": 0,
+      "TN": 320,
+      "FN": 0
+    },
+    "credential_stuffing": {
+      "TP": 22,
+      "FP": 0,
+      "TN": 0,
+      "FN": 0
+    },
+    "device_takeover": {
+      "TP": 23,
+      "FP": 0,
+      "TN": 0,
+      "FN": 0
+    },
+    "impossible_travel": {
+      "TP": 13,
+      "FP": 0,
+      "TN": 0,
+      "FN": 2
+    },
+    "token_replay": {
+      "TP": 20,
+      "FP": 0,
+      "TN": 0,
+      "FN": 0
+    }
+  },
+  "library_versions": {
+    "scikit-learn": "1.9.0",
+    "python": "3.13.7"
+  },
+  "design_notes": "Unsupervised fit on training features only (labels never passed to fit); contamination=0.20 fixed before evaluation, reflecting the known 20% composition of the controlled synthetic dataset (not discovered by the model, not tuned); frozen experimental parameters."
+}
