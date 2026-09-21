@@ -9,3 +9,6 @@ __pycache__/
 
 # MaxMind GeoLite2 databases (licensed; never committed)
 data/geoip/*.mmdb
+
+# IEEE-CIS Fraud Detection dataset (large local analysis input; never committed)
+data/ieee_cis/

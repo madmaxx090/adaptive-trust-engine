@@ -4,12 +4,14 @@ Session-security backend for fintech applications (FYP). It scores login/session
 events with live risk signals (geo velocity, device mismatch, token reuse,
 login burst), applies a frozen rule-based baseline scorer as the decision layer,
 and persists every scored session for audit and later analysis. An Isolation
-Forest model was evaluated offline against the same rule-based reference.
+Forest model was evaluated offline against the same rule-based reference and is
+now also served **live** as an additional, un-fused signal (step 10).
 
-Status: steps 1–9 complete plus the read endpoints (`GET /sessions`,
+Status: steps 1–10 complete plus the read endpoints (`GET /sessions`,
 `GET /sessions/{session_id}`) — infrastructure, live pipeline, frozen scorer,
-offline experiments (baseline + Isolation Forest), extended test suite, and the
-step 9 hardening fixes. This document is the authoritative current-state
+offline experiments (baseline + Isolation Forest), extended test suite, the
+step 9 hardening fixes, and the live ML signal (load-once Isolation Forest
+alongside the baseline). This document is the authoritative current-state
 reference; `README.md` reflects the earlier skeleton phase.
 
 ## 1. Architecture
@@ -42,20 +44,34 @@ reference; `README.md` reflects the earlier skeleton phase.
      for the previous session in Redis (raw tokens are never stored).
    - **Login burst count** — attempts for this user in the rolling 60 s window.
 4. Score with the frozen baseline scorer (unrounded raw score + tier).
-5. Persist atomically in Postgres, single transaction: user find-or-create
+5. Score with the live Isolation Forest signal (step 10): the artifact is
+   loaded ONCE at application startup and the same four live features go
+   through the frozen Phase 5 feature contract, yielding `ml_anomaly_flag`
+   (Phase 5 convention: -1 → flagged) and `ml_decision_score` (raw
+   `decision_function`; higher = more normal, negative = anomalous). The ML
+   signal is exposed alongside, never fused with, the baseline. A
+   missing/corrupt artifact fails startup; a request-time ML failure → 503
+   (same sanitized body).
+6. Persist atomically in Postgres, single transaction: user find-or-create
    (race-safe upsert — see §6), `sessions` row, `risk_events` row containing the
    score, tier, and `contributing_signals` including `risk_score_unrounded`.
-6. Post-commit Redis updates (store the current session's token hash, etc.) —
+   ML fields are response-only and are NOT persisted (this phase).
+7. Post-commit Redis updates (store the current session's token hash, etc.) —
    **fail-soft**: a Redis error never turns an already-persisted session into
    an error response.
-7. Respond with `risk_score` (rounded int), `risk_tier`, `session_id`, and
-   `contributing_signals`.
+8. Respond with `risk_score` (rounded int), `risk_tier`, `session_id`,
+   `contributing_signals`, `ml_anomaly_flag`, and `ml_decision_score` (the
+   last two are additive; existing fields unchanged).
 
 ### Failure semantics
 
-- GeoIP database unavailable or persistence failure → **503**, with the fixed
-  generic body `"Scoring service temporarily unavailable. Please try again later."`;
-  the full exception is logged server-side only (step 9 hardening).
+- GeoIP database unavailable, persistence failure, or ML-signal failure → **503**,
+  with the fixed generic body `"Scoring service temporarily unavailable. Please try again later."`;
+  the full exception is logged server-side only (step 9 hardening; the ML
+  signal reuses the same body — step 10).
+- ML artifact missing/corrupt/unreadable → application startup fails fast with
+  a descriptive server-side error (never a silent fallback pretending the ML
+  signal ran).
 - Validation: 422 for missing/null/int/empty/oversized fields. Length caps:
   `user_id` ≤ 255, `ip_address` ≤ 45, `device_fingerprint` ≤ 255. A
   malformed-but-non-empty IP is *not* a validation error — it is scored (200)
@@ -66,13 +82,15 @@ reference; `README.md` reflects the earlier skeleton phase.
 ```
 ate/
 ├── app/
-│   ├── main.py                  FastAPI app; CORS (localhost dev origins); mounts routers
+│   ├── main.py                  FastAPI app; CORS (localhost dev origins); mounts routers;
+│   │                            lifespan loads the ML artifact at startup (fail-fast)
 │   ├── api/
 │   │   ├── health.py            GET /health -> {"status": "ok"}
 │   │   └── session.py           POST /session/score; sanitized 503 mapping (step 9);
 │   │                            read-only GET /sessions + GET /sessions/{session_id}
 │   ├── core/
-│   │   ├── config.py            Pydantic Settings: DATABASE_URL, REDIS_URL, GEOIP_DB_PATH, CORS_ORIGINS
+│   │   ├── config.py            Pydantic Settings: DATABASE_URL, REDIS_URL, GEOIP_DB_PATH,
+│   │   │                        ML_MODEL_PATH, CORS_ORIGINS
 │   │   └── database.py          Sync SQLAlchemy engine + SessionLocal (psycopg2)
 │   ├── models/
 │   │   ├── user.py              users (id uuid PK, user_id unique, created_at)
@@ -85,22 +103,29 @@ ate/
 │   ├── schemas/
 │   │   ├── health.py            health response model
 │   │   └── session.py           request/response models; min/max length constraints
-│   │                            (step 9); session-read response schemas
+│   │                            (step 9); session-read response schemas; additive
+│   │                            ml_anomaly_flag / ml_decision_score (step 10)
 │   └── services/
-│       ├── risk_pipeline.py     live orchestration: signals -> score -> persist -> Redis;
-│       │                        race-safe find-or-create (step 9)
+│       ├── risk_pipeline.py     live orchestration: signals -> baseline score -> ML score
+│       │                        -> persist -> Redis; race-safe find-or-create (step 9)
 │       ├── baseline_scorer.py   FROZEN rule-based scorer (formula + tiers)
 │       ├── session_store.py     FROZEN Redis session/token-hash helpers
 │       ├── isolation_forest_scorer.py  FROZEN Isolation Forest wrapper (offline evaluation)
+│       ├── ml_runtime.py        live ML signal: load-once artifact + inference (step 10)
 │       └── geo.py               GeoLite2 lookup + haversine geo-velocity computation
 ├── alembic/
 │   └── versions/0001_initial_schema.py   initial migration: users, sessions, risk_events, audit_log
-├── tests/                       50 tests (baked into the api image)
+├── tests/                       70 tests (baked into the api image)
+├── train_ml_model.py            host script: builds + verifies the live model artifact
+│                                against the frozen ml_results.json (step 10)
+├── ml_model/
+│   ├── isolation_forest_v1.joblib             served artifact (SHA-256 in §4)
+│   └── isolation_forest_v1_verification.json  SHA-256 + versions + golden samples
 ├── evaluate_baseline.py         FROZEN offline baseline evaluation script
 ├── baseline_results.json        FROZEN baseline experiment results
 ├── ml_results.json              FROZEN Isolation Forest experiment results
 ├── ml_test_set_session_ids.json FROZEN session ids of the ML test split
-├── Dockerfile                   python:3.11-slim; COPY app/ tests/ alembic/ alembic.ini
+├── Dockerfile                   python:3.11-slim; COPY app/ tests/ ml_model/ alembic/ alembic.ini
 ├── docker-compose.yml           api + postgres + redis definitions
 └── requirements.txt
 ```
@@ -183,7 +208,7 @@ docker compose build api
 docker compose up -d api
 ```
 
-Test suite layout (50 tests):
+Test suite layout (70 tests):
 
 - `tests/test_health.py` (1) — health endpoint.
 - `tests/test_session_score.py` (2) — scorer/session-store unit tests.
@@ -197,6 +222,12 @@ Test suite layout (50 tests):
   (independent ORM mirror), pagination partition, tier filter, 422/404
   contracts, detail vs persisted row, latest-event selection + per-event
   history, event-less exclusion.
+- `tests/test_ml_signal.py` (20) — live ML signal: frozen-contract equivalence,
+  determinism, load-once, invalid-feature errors, startup fail-fast
+  (missing/corrupt artifact), golden cross-environment check (artifact SHA-256
+  + version + 25 samples), measured latency, exact measured decision-score
+  locks for six live scenarios, sanitized 503 on ML failure, response schema
+  keys, and the printed baseline-vs-ML side-by-side table.
 
 Some tests use a fake geolocation (documented monkeypatch) to keep results
 deterministic; concurrency tests fire real HTTP at the in-container uvicorn
@@ -238,6 +269,40 @@ Breakdown by attack type: credential_stuffing 22/22, device_takeover 23/23,
 impossible_travel 13/15 (2 FN), token_replay 20/20 detected; 320/320 clean
 sessions correctly not flagged. Recorded library versions: scikit-learn 1.9.0,
 Python 3.13.7 (offline evaluation on the host).
+
+### Live ML signal (step 10)
+
+The offline-trained Isolation Forest is now served live alongside the baseline
+(never fused; both signals reported separately).
+
+- Artifact: `ml_model/isolation_forest_v1.joblib`, built by
+  `train_ml_model.py` on the host with the validated Phase 5 environment
+  (Python 3.13, scikit-learn 1.9.0, joblib 1.6.0). The script reproduces the
+  exact Phase 5 split/fit, then reloads the SAVED artifact and re-evaluates the
+  held-out test split, refusing to continue unless it reproduces the frozen
+  `ml_results.json` exactly (metrics, confusion matrix, attack-type breakdown,
+  class distribution). Regenerate with `python train_ml_model.py`.
+  Artifact SHA-256: `DFE0F0CB56366A3E0CE7AFE7E6AA16F8B6E00E31E9C38AB0FC9BA889EB795952`.
+- Serving: loaded ONCE per process (FastAPI lifespan; lock-guarded lazy
+  first-use fallback for test clients) — never per request, never retrained
+  live. The container pins scikit-learn 1.9.0 + joblib 1.6.0
+  (`requirements.txt`); `tests/test_ml_signal.py` re-verifies the artifact
+  inside the container (byte hash + version + 25 deterministic golden rows).
+- Feature contract: rows built by the frozen `feature_row` helper — identical
+  order/encoding to Phase 5 by construction.
+- Outputs: `ml_anomaly_flag` (Phase 5 convention: predict -1 → flagged) and
+  `ml_decision_score` (raw, uncalibrated `decision_function`; higher = more
+  normal, negative = anomalous; not a probability). No 0–100 conversion, no
+  fusion, and no offline metric is claimed for the live system.
+- Measured live characteristic: first-ever sessions report geo velocity 0.0
+  (`no_history`), below the offline normal range (0.98–898.94 km/h), so the
+  model flags them as a *marginal* anomaly (decision score just below zero,
+  e.g. −0.0127) while attack-like patterns score well below −0.2 (measured:
+  impossible travel −0.266, device change −0.223, token reuse −0.236, burst
+  −0.257, combined −0.282; clean returning session +0.006). This is measured,
+  documented behavior of the validated artifact.
+- ML fields are response-only; `contributing_signals` and all existing
+  response fields are unchanged (Maheen's contract intact).
 
 ## 5. Frozen files (do not edit)
 
