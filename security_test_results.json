@@ -1,0 +1,612 @@
+{
+  "run": {
+    "run_id": "88c9b8d7",
+    "timestamp_utc": "2026-09-21T21:02:43.022886+00:00",
+    "target_base_url": "http://localhost:8008",
+    "python_version": "3.13.7",
+    "httpx_version": "0.28.1",
+    "host_os": "Windows-11-10.0.26200-SP0",
+    "health_preflight": {
+      "status_code": 200,
+      "body": {
+        "status": "ok"
+      }
+    }
+  },
+  "summary": {
+    "total_tests": 12,
+    "passed": 10,
+    "findings": 1,
+    "failed": 1,
+    "overall": "REVIEW_REQUIRED"
+  },
+  "tests": [
+    {
+      "id": "A1",
+      "section": "Input fuzzing",
+      "name": "malformed_json",
+      "request": "POST /session/score, truncated JSON body",
+      "expected": "422 (body rejected as invalid JSON)",
+      "actual": "status=422 (invalid JSON rejected)",
+      "verdict": "PASS",
+      "notes": "",
+      "duration_ms": 93.8,
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": 422,
+          "body": {
+            "detail": [
+              {
+                "type": "json_invalid",
+                "loc": [
+                  "body",
+                  30
+                ],
+                "msg": "JSON decode error",
+                "input": {},
+                "ctx": {
+                  "error": "Expecting value"
+                }
+              }
+            ]
+          },
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 93.8
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    },
+    {
+      "id": "A2",
+      "section": "Input fuzzing",
+      "name": "sqli_user_id",
+      "request": "POST /session/score, user_id = SQLi literal",
+      "expected": "200; GET /sessions/{id} returns user_id byte-identical (literal data, not executed)",
+      "actual": "status=200; literal round-trip OK",
+      "verdict": "PASS",
+      "notes": "SQL-metacharacter string stored and returned verbatim as data (parameterized ORM access; no SQL executed).",
+      "duration_ms": 448.2,
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": 200,
+          "body": {
+            "risk_score": 0,
+            "risk_tier": "low",
+            "contributing_signals": {
+              "geo_velocity_kmh": 0.0,
+              "geo_location_status": "no_history",
+              "device_mismatch_score": 0.0,
+              "token_reuse_flag": false,
+              "login_burst_count": 1
+            },
+            "session_id": "681f0013-3e03-43fe-80ee-bffd6576841c",
+            "ml_anomaly_flag": true,
+            "ml_decision_score": -0.012665046501311339
+          },
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 407.4
+        },
+        {
+          "method": "GET",
+          "path": "/sessions/681f0013-3e03-43fe-80ee-bffd6576841c",
+          "status_code": 200,
+          "body": {
+            "session_id": "681f0013-3e03-43fe-80ee-bffd6576841c",
+            "user_id": "1' OR '1'='1",
+            "risk_score": 0,
+            "risk_tier": "low",
+            "contributing_signals": {
+              "geo_velocity_kmh": 0.0,
+              "geo_location_status": "no_history",
+              "device_mismatch_score": 0.0,
+              "token_reuse_flag": false,
+              "login_burst_count": 1
+            },
+            "device_fingerprint": "device-A",
+            "ip_address": "192.168.1.10",
+            "timestamp": "2026-09-21T21:02:41.193985Z",
+            "history": [
+              {
+                "event": "risk_scored",
+                "timestamp": "2026-09-21T21:02:41.366600Z"
+              }
+            ]
+          },
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 40.8
+        }
+      ],
+      "created_user_ids": [
+        "1' OR '1'='1"
+      ],
+      "created_session_ids": [
+        "681f0013-3e03-43fe-80ee-bffd6576841c"
+      ]
+    },
+    {
+      "id": "A3",
+      "section": "Input fuzzing",
+      "name": "xss_device_fingerprint",
+      "request": "POST /session/score, device_fingerprint = XSS literal",
+      "expected": "200; device_fingerprint stored/returned as a literal string (JSON response, never HTML)",
+      "actual": "status=200; literal round-trip OK (application/json)",
+      "verdict": "PASS",
+      "notes": "Markup stored and returned verbatim as a JSON string value; the API response is never rendered as HTML.",
+      "duration_ms": 64.0,
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": 200,
+          "body": {
+            "risk_score": 0,
+            "risk_tier": "low",
+            "contributing_signals": {
+              "geo_velocity_kmh": 0.0,
+              "geo_location_status": "no_history",
+              "device_mismatch_score": 0.0,
+              "token_reuse_flag": false,
+              "login_burst_count": 1
+            },
+            "session_id": "a09b9948-b6e7-492a-80a4-e12a129f0761",
+            "ml_anomaly_flag": true,
+            "ml_decision_score": -0.012665046501311339
+          },
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 49.7
+        },
+        {
+          "method": "GET",
+          "path": "/sessions/a09b9948-b6e7-492a-80a4-e12a129f0761",
+          "status_code": 200,
+          "body": {
+            "session_id": "a09b9948-b6e7-492a-80a4-e12a129f0761",
+            "user_id": "sec-xss-88c9b8d7",
+            "risk_score": 0,
+            "risk_tier": "low",
+            "contributing_signals": {
+              "geo_velocity_kmh": 0.0,
+              "geo_location_status": "no_history",
+              "device_mismatch_score": 0.0,
+              "token_reuse_flag": false,
+              "login_burst_count": 1
+            },
+            "device_fingerprint": "<script>alert(1)</script>",
+            "ip_address": "192.168.1.10",
+            "timestamp": "2026-09-21T21:02:41.470470Z",
+            "history": [
+              {
+                "event": "risk_scored",
+                "timestamp": "2026-09-21T21:02:41.493087Z"
+              }
+            ]
+          },
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 14.4
+        }
+      ],
+      "created_user_ids": [
+        "sec-xss-88c9b8d7"
+      ],
+      "created_session_ids": [
+        "a09b9948-b6e7-492a-80a4-e12a129f0761"
+      ]
+    },
+    {
+      "id": "A4",
+      "section": "Input fuzzing",
+      "name": "oversized_user_id",
+      "request": "POST /session/score, user_id = 10,000 chars",
+      "expected": "422 (max_length=255 enforced; nothing persisted)",
+      "actual": "status=422 (length limit held)",
+      "verdict": "PASS",
+      "notes": "Phase 9 input length limit: user_id max_length=255 (schema-level).",
+      "duration_ms": 49.0,
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": 422,
+          "body": "{\"detail\": [{\"type\": \"string_too_long\", \"loc\": [\"body\", \"user_id\"], \"msg\": \"String should have at most 255 characters\", \"input\": \"uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu... [truncated; 10162 characters total]",
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 49.0
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    },
+    {
+      "id": "A5",
+      "section": "Input fuzzing",
+      "name": "null_byte_user_id",
+      "request": "POST /session/score, user_id contains U+0000",
+      "expected": "Graceful handling: 422, or sanitized 503 (exact generic body), or 200; never a 500 and never leaked internals",
+      "actual": "status=500 (expected 422/503/200 without leaks)",
+      "verdict": "FINDING",
+      "notes": "",
+      "duration_ms": 53.2,
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": 500,
+          "body": "Internal Server Error",
+          "headers": {
+            "content-type": "text/plain; charset=utf-8"
+          },
+          "duration_ms": 53.2
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    },
+    {
+      "id": "A6",
+      "section": "Input fuzzing",
+      "name": "wrong_type_user_id",
+      "request": "POST /session/score, user_id = 123 (integer)",
+      "expected": "422 (Pydantic strict str; no int coercion)",
+      "actual": "no response (RemoteProtocolError('Server disconnected without sending a response.'))",
+      "verdict": "FAIL",
+      "notes": "",
+      "duration_ms": 81.8,
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": null,
+          "body": null,
+          "headers": {},
+          "duration_ms": 81.8,
+          "error": "RemoteProtocolError('Server disconnected without sending a response.')"
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    },
+    {
+      "id": "A7",
+      "section": "Input fuzzing",
+      "name": "empty_body",
+      "request": "POST /session/score, body = {}",
+      "expected": "422 (three required fields missing)",
+      "actual": "status=422 (missing fields)",
+      "verdict": "PASS",
+      "notes": "",
+      "duration_ms": 28.6,
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": 422,
+          "body": {
+            "detail": [
+              {
+                "type": "missing",
+                "loc": [
+                  "body",
+                  "user_id"
+                ],
+                "msg": "Field required",
+                "input": {}
+              },
+              {
+                "type": "missing",
+                "loc": [
+                  "body",
+                  "ip_address"
+                ],
+                "msg": "Field required",
+                "input": {}
+              },
+              {
+                "type": "missing",
+                "loc": [
+                  "body",
+                  "device_fingerprint"
+                ],
+                "msg": "Field required",
+                "input": {}
+              }
+            ]
+          },
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 28.6
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    },
+    {
+      "id": "A8",
+      "section": "Input fuzzing",
+      "name": "malformed_ip_address",
+      "request": "POST /session/score, ip_address = not-an-ip (2-step)",
+      "expected": "200 + geo_location_status=\"invalid_ip\" (never 422/500)",
+      "actual": "status=200, geo_location_status=\"invalid_ip\"",
+      "verdict": "PASS",
+      "notes": "Two-step by design: a fresh user short-circuits to \"no_history\" before IP validation, so step 1 establishes the prior session (documented precedence).",
+      "duration_ms": 160.6,
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": 200,
+          "body": {
+            "risk_score": 0,
+            "risk_tier": "low",
+            "contributing_signals": {
+              "geo_velocity_kmh": 0.0,
+              "geo_location_status": "no_history",
+              "device_mismatch_score": 0.0,
+              "token_reuse_flag": false,
+              "login_burst_count": 1
+            },
+            "session_id": "3906db81-5f2b-42d7-b1cb-34f626cf92ca",
+            "ml_anomaly_flag": true,
+            "ml_decision_score": -0.012665046501311339
+          },
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 98.4
+        },
+        {
+          "method": "POST",
+          "path": "/session/score",
+          "status_code": 200,
+          "body": {
+            "risk_score": 1,
+            "risk_tier": "low",
+            "contributing_signals": {
+              "geo_velocity_kmh": 0.0,
+              "geo_location_status": "invalid_ip",
+              "device_mismatch_score": 0.0,
+              "token_reuse_flag": false,
+              "login_burst_count": 2
+            },
+            "session_id": "e6bd0f6d-742a-4383-a909-00e76a79fef4",
+            "ml_anomaly_flag": true,
+            "ml_decision_score": -0.009158969354051305
+          },
+          "headers": {
+            "content-type": "application/json"
+          },
+          "duration_ms": 62.2
+        }
+      ],
+      "created_user_ids": [
+        "sec-badip-88c9b8d7"
+      ],
+      "created_session_ids": [
+        "3906db81-5f2b-42d7-b1cb-34f626cf92ca",
+        "e6bd0f6d-742a-4383-a909-00e76a79fef4"
+      ]
+    },
+    {
+      "id": "B1",
+      "section": "HTTP method fuzzing",
+      "name": "delete_session",
+      "request": "DELETE /sessions/{id} (real session id captured earlier in this run)",
+      "expected": "405 Method Not Allowed + Allow header containing GET",
+      "actual": "status=405, Allow=GET",
+      "verdict": "PASS",
+      "notes": "",
+      "duration_ms": 4.2,
+      "steps": [
+        {
+          "method": "DELETE",
+          "path": "/sessions/681f0013-3e03-43fe-80ee-bffd6576841c",
+          "status_code": 405,
+          "body": {
+            "detail": "Method Not Allowed"
+          },
+          "headers": {
+            "allow": "GET",
+            "content-type": "application/json"
+          },
+          "duration_ms": 4.2
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    },
+    {
+      "id": "B2",
+      "section": "HTTP method fuzzing",
+      "name": "put_session_score",
+      "request": "PUT /session/score",
+      "expected": "405 Method Not Allowed + Allow header containing POST",
+      "actual": "status=405, Allow=POST",
+      "verdict": "PASS",
+      "notes": "",
+      "duration_ms": 4.1,
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/session/score",
+          "status_code": 405,
+          "body": {
+            "detail": "Method Not Allowed"
+          },
+          "headers": {
+            "allow": "POST",
+            "content-type": "application/json"
+          },
+          "duration_ms": 4.1
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    },
+    {
+      "id": "B3",
+      "section": "HTTP method fuzzing",
+      "name": "patch_sessions",
+      "request": "PATCH /sessions",
+      "expected": "405 Method Not Allowed + Allow header containing GET",
+      "actual": "status=405, Allow=GET",
+      "verdict": "PASS",
+      "notes": "",
+      "duration_ms": 41.4,
+      "steps": [
+        {
+          "method": "PATCH",
+          "path": "/sessions",
+          "status_code": 405,
+          "body": {
+            "detail": "Method Not Allowed"
+          },
+          "headers": {
+            "allow": "GET",
+            "content-type": "application/json"
+          },
+          "duration_ms": 41.4
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    },
+    {
+      "id": "B4",
+      "section": "HTTP method fuzzing",
+      "name": "options_cors_preflight",
+      "request": "OPTIONS /session/score (Origin: http://localhost:3000, Access-Control-Request-Method: POST)",
+      "expected": "200 CORS preflight (access-control-allow-methods present, origin http://localhost:3000 echoed) - not an error",
+      "actual": "status=200, allow-methods='DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT', allow-origin='http://localhost:3000'",
+      "verdict": "PASS",
+      "notes": "Standard preflight answered by the CORS middleware.",
+      "duration_ms": 3.4,
+      "steps": [
+        {
+          "method": "OPTIONS",
+          "path": "/session/score",
+          "status_code": 200,
+          "body": "OK",
+          "headers": {
+            "content-type": "text/plain; charset=utf-8",
+            "access-control-allow-methods": "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT",
+            "access-control-allow-origin": "http://localhost:3000",
+            "access-control-allow-credentials": "true",
+            "vary": "Origin"
+          },
+          "duration_ms": 3.4
+        }
+      ],
+      "created_user_ids": [],
+      "created_session_ids": []
+    }
+  ],
+  "burst_probe": {
+    "user_id": "sec-burst-88c9b8d7",
+    "requests_fired": 30,
+    "status_distribution": {
+      "200": 30
+    },
+    "succeeded_200": 30,
+    "http_500_count": 0,
+    "client_errors": 0,
+    "distinct_sessions_created": 30,
+    "total_wall_seconds": 1.069,
+    "latency_ms": {
+      "min": 781.2,
+      "median": 1033.5,
+      "max": 1055.0
+    },
+    "created_session_ids": [
+      "5d33dc2e-b669-4747-864c-57f652b1ff40",
+      "d8ff8802-7af6-46ac-a034-46dc55bea763",
+      "e425bca3-f002-4924-a15b-f1a75cb463a0",
+      "fcacb401-0d20-411b-bb3e-ba22de64df97",
+      "101a5a97-5d7e-4ccb-8012-7ad5fe133f8c",
+      "07e2c2ce-52e1-4c58-86f9-42e2c2996b65",
+      "22804dda-6185-4ebe-b1d4-c8541a65e5c4",
+      "afb1d635-ea8e-4afc-afb3-933edf1e5eac",
+      "d5d31fa1-eed5-422a-8d89-9dc468b6340c",
+      "fafff3ca-181a-4060-8992-2d565a9bda28",
+      "9a41a937-b4dd-48d7-ae69-69b1f5efeb1b",
+      "8ae6c08d-e399-45af-a5d3-657df2006643",
+      "29c7446f-bbaf-4234-add7-c10f3875a912",
+      "9619509b-560d-4fc4-bb62-db7b06d59cac",
+      "04de346f-68a2-4c68-b1e1-1cb066c51b95",
+      "d11c1a13-2bbd-4d53-800a-c29ebfcb8f80",
+      "68f57e79-0deb-4bcd-b1c6-d0ccf3e1f3ff",
+      "313f2bfd-4739-4b4a-8d98-8761ab5889ec",
+      "e6f5a107-604f-41f5-98bc-7ffcf76178fa",
+      "69fd96bd-bd0a-4dc4-9b21-06fcfe5900e1",
+      "1b619031-2aab-47f9-8451-ccd67f23d214",
+      "d4706a61-7b25-405d-902c-d917922ae084",
+      "bf3c02b4-912f-425f-84f9-6b122cec46e3",
+      "83e184d2-59f0-43a3-a88a-9bee0bdbae21",
+      "38aa9eda-c221-4fc8-bc1f-e371e1c805d9",
+      "75774aa4-c8bb-4a64-b872-a2d77311eaff",
+      "6c8bac67-d6b6-44f6-8bbd-ead8b0cce90a",
+      "49ada574-2dd2-415d-8b2c-a0b6c9126809",
+      "ab5bef7f-b167-42e3-a1e6-36eb971670c1",
+      "26136872-f369-4904-90e1-f1572eedddcc"
+    ]
+  },
+  "created_state": {
+    "user_ids": [
+      "1' OR '1'='1",
+      "sec-badip-88c9b8d7",
+      "sec-burst-88c9b8d7",
+      "sec-xss-88c9b8d7"
+    ],
+    "session_ids": [
+      "04de346f-68a2-4c68-b1e1-1cb066c51b95",
+      "07e2c2ce-52e1-4c58-86f9-42e2c2996b65",
+      "101a5a97-5d7e-4ccb-8012-7ad5fe133f8c",
+      "1b619031-2aab-47f9-8451-ccd67f23d214",
+      "22804dda-6185-4ebe-b1d4-c8541a65e5c4",
+      "26136872-f369-4904-90e1-f1572eedddcc",
+      "29c7446f-bbaf-4234-add7-c10f3875a912",
+      "313f2bfd-4739-4b4a-8d98-8761ab5889ec",
+      "38aa9eda-c221-4fc8-bc1f-e371e1c805d9",
+      "3906db81-5f2b-42d7-b1cb-34f626cf92ca",
+      "49ada574-2dd2-415d-8b2c-a0b6c9126809",
+      "5d33dc2e-b669-4747-864c-57f652b1ff40",
+      "681f0013-3e03-43fe-80ee-bffd6576841c",
+      "68f57e79-0deb-4bcd-b1c6-d0ccf3e1f3ff",
+      "69fd96bd-bd0a-4dc4-9b21-06fcfe5900e1",
+      "6c8bac67-d6b6-44f6-8bbd-ead8b0cce90a",
+      "75774aa4-c8bb-4a64-b872-a2d77311eaff",
+      "83e184d2-59f0-43a3-a88a-9bee0bdbae21",
+      "8ae6c08d-e399-45af-a5d3-657df2006643",
+      "9619509b-560d-4fc4-bb62-db7b06d59cac",
+      "9a41a937-b4dd-48d7-ae69-69b1f5efeb1b",
+      "a09b9948-b6e7-492a-80a4-e12a129f0761",
+      "ab5bef7f-b167-42e3-a1e6-36eb971670c1",
+      "afb1d635-ea8e-4afc-afb3-933edf1e5eac",
+      "bf3c02b4-912f-425f-84f9-6b122cec46e3",
+      "d11c1a13-2bbd-4d53-800a-c29ebfcb8f80",
+      "d4706a61-7b25-405d-902c-d917922ae084",
+      "d5d31fa1-eed5-422a-8d89-9dc468b6340c",
+      "d8ff8802-7af6-46ac-a034-46dc55bea763",
+      "e425bca3-f002-4924-a15b-f1a75cb463a0",
+      "e6bd0f6d-742a-4383-a909-00e76a79fef4",
+      "e6f5a107-604f-41f5-98bc-7ffcf76178fa",
+      "fafff3ca-181a-4060-8992-2d565a9bda28",
+      "fcacb401-0d20-411b-bb3e-ba22de64df97"
+    ]
+  }
+}
