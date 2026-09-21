@@ -32,6 +32,17 @@ class SessionScoreResponse(BaseModel):
     risk_tier: str
     contributing_signals: ContributingSignals
     session_id: str
+    # Additive ML signal (Isolation Forest alongside, not fused with, the
+    # rule-based baseline): binary anomaly flag + raw decision score.
+    ml_anomaly_flag: bool = Field(
+        description="Isolation Forest anomaly flag (True = flagged/suspicious)."
+    )
+    ml_decision_score: float = Field(
+        description=(
+            "Raw uncalibrated Isolation Forest decision_function value "
+            "(higher = more normal; negative = anomalous; not a probability)."
+        )
+    )
 
 
 class SessionListItem(BaseModel):

@@ -4,12 +4,14 @@ One pass per request, in this exact order:
 
     load history (Postgres) -> live signals (device, geo, token, burst)
     -> frozen baseline scorer (imported, unmodified)
+    -> ML signal (Isolation Forest, loaded once at startup)
     -> persist to Postgres (commit first) -> update Redis state (after commit)
     -> response
 
 Failure policy:
 - Postgres unavailable (history read or persistence), Redis unavailable during
-  signal computation, or the GeoLite2 database missing: the corresponding
+  signal computation, the GeoLite2 database missing, or the ML signal
+  unavailable (missing/corrupt artifact, invalid features): the corresponding
   exception propagates (mapped to HTTP 503 with a descriptive message) and
   nothing partial is persisted.
 - Redis writes AFTER a successful Postgres commit are fail-soft: they are
@@ -41,6 +43,7 @@ from app.core.database import SessionLocal
 from app.models import RiskEvent, Session, User
 from app.services import geo
 from app.services.baseline_scorer import score_session as frozen_score_session
+from app.services.ml_runtime import ml_runtime
 from app.services.session_store import (
     store_refresh_token_hash,
     update_session_context,
@@ -67,6 +70,8 @@ class ScoreOutcome:
     risk_tier: str
     contributing_signals: dict[str, Any]
     session_id: str
+    ml_anomaly_flag: bool
+    ml_decision_score: float
 
 
 def process_session_score(
@@ -99,6 +104,15 @@ def process_session_score(
     # Frozen baseline scorer (imported as-is; the prediction output exists for
     # the offline evaluations and is not used by the live endpoint).
     raw_score, risk_tier, _prediction = frozen_score_session(
+        velocity_kmh, device_mismatch, token_reuse_flag, burst_count
+    )
+
+    # Additional ML signal: scored on the same four signal values with the
+    # frozen Phase 5 feature encoding (app/services/ml_runtime.py). The
+    # rule-based baseline above is untouched and both signals are returned
+    # distinctly -- nothing is fused into a new score. An ML failure raises
+    # MLSignalError (sanitized 503 at the API; no silent fallback).
+    ml_anomaly_flag, ml_decision_score = ml_runtime.score(
         velocity_kmh, device_mismatch, token_reuse_flag, burst_count
     )
 
@@ -145,6 +159,8 @@ def process_session_score(
         risk_tier=risk_tier,
         contributing_signals=contributing_signals,
         session_id=session_id,
+        ml_anomaly_flag=ml_anomaly_flag,
+        ml_decision_score=ml_decision_score,
     )
 
 

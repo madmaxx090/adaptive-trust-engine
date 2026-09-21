@@ -11,6 +11,11 @@ python-dotenv==1.2.3
 # Live geo signals (GeoLite2 offline database reader)
 geoip2==5.3.0
 
+# Live ML signal (Isolation Forest inference; pinned to the validated
+# Phase 5 evaluation environment: scikit-learn 1.9.0 / joblib 1.6.0)
+scikit-learn==1.9.0
+joblib==1.6.0
+
 # Test-only (FastAPI TestClient / pytest)
 pytest==9.1.1
 httpx==0.28.1

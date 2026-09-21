@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY tests ./tests
+COPY ml_model ./ml_model
 COPY alembic.ini .
 COPY alembic ./alembic
 

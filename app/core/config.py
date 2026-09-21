@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Offline GeoLite2 database file (placed manually; never auto-downloaded).
     geoip_db_path: str = "data/geoip/GeoLite2-City.mmdb"
 
+    # Trained Isolation Forest artifact for the live ML signal (produced
+    # offline by train_ml_model.py with the frozen Phase 5 parameters).
+    ml_model_path: str = "ml_model/isolation_forest_v1.joblib"
+
     # Localhost development origins only (React dashboard connects here later).
     cors_origins: list[str] = [
         "http://localhost:3000",

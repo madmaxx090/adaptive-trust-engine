@@ -1,4 +1,4 @@
-"""Session scoring route: live risk signals via the frozen baseline scorer."""
+"""Session scoring route: live baseline + ML risk signals."""
 
 import logging
 from datetime import datetime
@@ -20,6 +20,7 @@ from app.schemas.session import (
     SessionScoreResponse,
 )
 from app.services.geo import GeoIPDatabaseUnavailableError
+from app.services.ml_runtime import MLSignalError
 from app.services.risk_pipeline import (
     RiskPipelineUnavailableError,
     process_session_score,
@@ -47,7 +48,11 @@ def score_session(payload: SessionScoreRequest) -> SessionScoreResponse:
             device_fingerprint=payload.device_fingerprint,
             refresh_token=payload.refresh_token,
         )
-    except (GeoIPDatabaseUnavailableError, RiskPipelineUnavailableError) as exc:
+    except (
+        GeoIPDatabaseUnavailableError,
+        RiskPipelineUnavailableError,
+        MLSignalError,
+    ) as exc:
         # Infrastructure unavailable -> 503. The full underlying exception
         # (including driver SQL/constraint details) is logged server-side only.
         logger.exception("Scoring temporarily unavailable: %s", exc)
@@ -58,6 +63,8 @@ def score_session(payload: SessionScoreRequest) -> SessionScoreResponse:
         risk_tier=outcome.risk_tier,
         contributing_signals=ContributingSignals(**outcome.contributing_signals),
         session_id=outcome.session_id,
+        ml_anomaly_flag=outcome.ml_anomaly_flag,
+        ml_decision_score=outcome.ml_decision_score,
     )
 
 
