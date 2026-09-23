@@ -12,6 +12,10 @@ behavior). This module adds:
 - malformed/invalid-input tests (422 validation, malformed IPs, garbage
   tokens); empty strings and oversized values are rejected by the explicit
   min_length/max_length constraints on the request schema;
+- NUL-byte regression tests: psycopg2 rejects NUL bytes in text parameters
+  client-side with a plain ValueError (not a SQLAlchemyError), which must be
+  normalized at the DB boundary to the established sanitized 503 (user_id
+  and device_fingerprint variants; nothing persisted either way);
 - concurrency tests firing real HTTP requests at the running in-container
   uvicorn (Dockerfile: port 8000; the compose 8008:8000 mapping is host-side)
   via ThreadPoolExecutor + a Barrier, asserting API-vs-database consistency;
@@ -835,6 +839,95 @@ def test_persistence_failure_returns_503_without_internal_details(
 
     # Nothing persisted by the failed request: only the seeded session row.
     assert _session_count(user_id) == 1
+    assert _risk_event_count_for_user(user_id) == 0
+
+
+def test_nul_byte_user_id_returns_sanitized_503(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A5 regression: NUL byte in user_id -> sanitized 503, nothing persisted.
+
+    psycopg2 rejects NUL bytes in text parameters client-side (before any SQL
+    is sent) with a plain ValueError that SQLAlchemy re-raises unwrapped --
+    previously an unhandled 500. It must take the established
+    infrastructure-failure path instead: full cause logged server-side only,
+    the fixed generic 503 body to the client, and no partial persistence.
+
+    No ``user_id`` fixture here: the count/cleanup helpers match rows by
+    user_id and cannot query with a NUL-bearing value either; global table
+    totals are used instead.
+    """
+    nul_user_id = f"test-nul-{uuid.uuid4().hex[:12]}\x00suffix"
+    users_before = _user_count_total()
+    events_before = _risk_event_count_total()
+
+    with caplog.at_level("ERROR"):
+        response = client.post("/session/score", json=_payload(nul_user_id))
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Scoring service temporarily unavailable. Please try again later."
+    }
+
+    # The raw body must not leak SQL, driver errors, or the rejection reason.
+    body_text = response.text
+    for forbidden in (
+        "INSERT",
+        "SELECT",
+        "users",
+        "sessions",
+        "risk_events",
+        "constraint",
+        "Traceback",
+        "psycopg2",
+        "ValueError",
+        "NUL",
+    ):
+        assert forbidden not in body_text, (
+            f"response body leaked {forbidden!r}: {body_text}"
+        )
+
+    # The real cause stays server-side: the wrapped pipeline message plus the
+    # driver's NUL rejection text.
+    log_text = caplog.text
+    assert "session history lookup" in log_text
+    assert "NUL" in log_text
+
+    # Nothing persisted by the failed request.
+    assert _user_count_total() == users_before
+    assert _risk_event_count_total() == events_before
+
+
+def test_nul_byte_device_fingerprint_returns_sanitized_503(
+    user_id: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """NUL byte in device_fingerprint -> sanitized 503 at the persistence step.
+
+    Same driver-level rejection class as the user_id case, but reached later
+    in the pipeline (``_persist_scored_session``'s INSERT flush). The whole
+    transaction must roll back and the response must stay the fixed generic
+    503 (nothing partial, no internal details).
+    """
+    with caplog.at_level("ERROR"):
+        response = client.post(
+            "/session/score",
+            json=_payload(user_id, device_fingerprint=f"{DOMAIN_DEVICE}\x00nul"),
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Scoring service temporarily unavailable. Please try again later."
+    }
+
+    log_text = caplog.text
+    assert "Failed to persist session/risk event" in log_text
+    assert "NUL" in log_text
+
+    # Transaction rolled back: no user row, no session, no risk event. The
+    # fixture teardown also removes this attempt's Redis burst key.
+    assert _user_row_count(user_id) == 0
+    assert _session_count(user_id) == 0
     assert _risk_event_count_for_user(user_id) == 0
 
 

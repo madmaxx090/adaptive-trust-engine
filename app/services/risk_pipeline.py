@@ -9,11 +9,12 @@ One pass per request, in this exact order:
     -> response
 
 Failure policy:
-- Postgres unavailable (history read or persistence), Redis unavailable during
-  signal computation, the GeoLite2 database missing, or the ML signal
-  unavailable (missing/corrupt artifact, invalid features): the corresponding
-  exception propagates (mapped to HTTP 503 with a descriptive message) and
-  nothing partial is persisted.
+- Postgres unavailable (history read or persistence), including client-side
+  parameter rejection by the database driver (e.g. NUL bytes in text
+  parameters), Redis unavailable during signal computation, the GeoLite2
+  database missing, or the ML signal unavailable (missing/corrupt artifact,
+  invalid features): the corresponding exception propagates (mapped to HTTP
+  503 with a descriptive message) and nothing partial is persisted.
 - Redis writes AFTER a successful Postgres commit are fail-soft: they are
   logged, not raised. The risk decision and its audit trail are already
   durable in Postgres (the source of truth); the next request self-heals from
@@ -183,7 +184,12 @@ def _load_previous_session(user_id: str) -> Session | None:
                 )
                 .limit(1)
             ).scalar_one_or_none()
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, ValueError) as exc:
+        # psycopg2 rejects NUL bytes in text parameters client-side (before
+        # any SQL is sent) with a plain ValueError -- not a DBAPI/SQLAlchemy
+        # error class, so SQLAlchemy re-raises it unwrapped. Normalized here
+        # to the established infrastructure-failure path (logged server-side,
+        # sanitized 503 to the client); the input itself is never altered.
         raise RiskPipelineUnavailableError(
             f"PostgreSQL unavailable during session history lookup: {exc}"
         ) from exc
@@ -305,7 +311,13 @@ def _persist_scored_session(
             )
             db.commit()
             return session_row.session_id
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, ValueError) as exc:
+        # Same normalization as in _load_previous_session: psycopg2's
+        # client-side parameter rejection (e.g. NUL bytes in text parameters)
+        # raises a plain ValueError that SQLAlchemy re-raises unwrapped, and
+        # it must reach the sanitized-503 path instead of escaping as an
+        # unhandled 500. The exception still occurs before any commit, so
+        # nothing partial is persisted.
         raise RiskPipelineUnavailableError(
             f"Failed to persist session/risk event to PostgreSQL: {exc}"
         ) from exc

@@ -1,7 +1,7 @@
 # ATE Live API Security Test Results
 
-- **Run ID:** `b27d193b`
-- **Timestamp (UTC):** 2026-09-21T21:17:50.729987+00:00
+- **Run ID:** `88c9b8d7`
+- **Timestamp (UTC):** 2026-09-21T21:02:43.022886+00:00
 - **Target:** `http://localhost:8008` (live Docker Compose stack, real HTTP)
 - **Client:** httpx 0.28.1 on Python 3.13.7 (Windows-11-10.0.26200-SP0)
 - **Pre-flight:** `GET /health` -> 200 `{"status": "ok"}`
@@ -11,10 +11,10 @@
 | Metric | Value |
 |---|---|
 | Tests executed | 12 |
-| PASS | 12 |
-| FINDING | 0 |
-| FAIL | 0 |
-| Overall | **PASS** |
+| PASS | 10 |
+| FINDING | 1 |
+| FAIL | 1 |
+| Overall | **REVIEW_REQUIRED** |
 
 ## Input fuzzing
 
@@ -24,8 +24,8 @@
 | A2 | sqli_user_id | 200; GET /sessions/{id} returns user_id byte-identical (literal data, not executed) | status=200; literal round-trip OK | **PASS** |
 | A3 | xss_device_fingerprint | 200; device_fingerprint stored/returned as a literal string (JSON response, never HTML) | status=200; literal round-trip OK (application/json) | **PASS** |
 | A4 | oversized_user_id | 422 (max_length=255 enforced; nothing persisted) | status=422 (length limit held) | **PASS** |
-| A5 | null_byte_user_id | Graceful handling: 422, or sanitized 503 (exact generic body), or 200; never a 500 and never leaked internals | status=503, sanitized generic body (no crash, no internals) | **PASS** |
-| A6 | wrong_type_user_id | 422 (Pydantic strict str; no int coercion) | status=422 (type rejection) | **PASS** |
+| A5 | null_byte_user_id | Graceful handling: 422, or sanitized 503 (exact generic body), or 200; never a 500 and never leaked internals | status=500 (expected 422/503/200 without leaks) | **FINDING** |
+| A6 | wrong_type_user_id | 422 (Pydantic strict str; no int coercion) | no response (RemoteProtocolError('Server disconnected without sending a response.')) | **FAIL** |
 | A7 | empty_body | 422 (three required fields missing) | status=422 (missing fields) | **PASS** |
 | A8 | malformed_ip_address | 200 + geo_location_status="invalid_ip" (never 422/500) | status=200, geo_location_status="invalid_ip" | **PASS** |
 
@@ -48,19 +48,29 @@
 | Client-side errors | 0 |
 | Status distribution | {"200": 30} |
 | Distinct sessions created | 30 |
-| Total wall time | 0.964 s |
-| Latency min / median / max | 783.9 / 937.1 / 949.4 ms |
+| Total wall time | 1.069 s |
+| Latency min / median / max | 781.2 / 1033.5 / 1055.0 ms |
 
 This probe is informational only (no pass/fail is defined): it documents actual behavior under burst load against the live system.
 
 ## Findings
 
-None - every test matched its documented expectation.
+### A5 null_byte_user_id - FINDING
+
+- Expected: Graceful handling: 422, or sanitized 503 (exact generic body), or 200; never a 500 and never leaked internals
+- Actual: status=500 (expected 422/503/200 without leaks)
+- `POST /session/score` -> 500: `Internal Server Error`
+
+### A6 wrong_type_user_id - FAIL
+
+- Expected: 422 (Pydantic strict str; no int coercion)
+- Actual: no response (RemoteProtocolError('Server disconnected without sending a response.'))
+- `POST /session/score` -> no response: `null`
 
 ## Probe-created state (traceability)
 
-- User ids created: `1' OR '1'='1`, `sec-badip-b27d193b`, `sec-burst-b27d193b`, `sec-xss-b27d193b`
-- Session ids created: 34 (`0180f294-551d-4f84-bc47-904f0598db15`, `077f60ee-e5eb-4d79-81c2-11f36a68e432`, `11d122ed-4519-446a-8f08-aed8cae4bf08`, `182785a6-8505-4180-a6a9-d8f5c45ffe5a`, `187d7436-aef9-4b1f-9e7f-40523a1661a5`, `197fb9c6-901e-4707-ad7f-2211d741e2bb`, `1b71847d-2a45-4f31-b06d-03e1ed77caf9`, `29465a46-0c54-4641-844b-37c6161ffbcc`, `310544b5-8159-4d6e-9fda-f2e9a87e3c6a`, `34648106-4b58-4d6a-a221-55fa380dcd79`, `40a699e8-0965-4043-81c1-998f6b843056`, `43e0bae0-d7e8-4c68-ba31-1853c8a66073`, `459df32d-f98f-481c-9362-d65e8eb012f3`, `46bd11e5-9d7b-44b1-b216-9e01c9b25e54`, `49ced631-0b6e-4ba9-9c2e-3873dcbabe8c`, `54fe6de9-e1bf-4c71-8676-6460b07b04f7`, `65ee132b-7ada-4f63-8b03-811b5bf4216a`, `67e85aa3-925b-47bc-bec1-6e353c2d5378`, `7080b9d6-84f0-4f60-a468-c9eb34259ac7`, `7b56430d-89fd-4db4-889e-ef1b87a89c25`, `8cdf15a4-e7e1-4a9a-950f-603aad2fb854`, `955b854c-9dbf-4428-a80d-c63a90f79d24`, `a4ceac07-d151-45d0-a851-fcefe61db721`, `a6d0e713-8f40-4338-bc6f-6c1f5d468711`, `a7261ca8-b5e4-44cf-b24c-e3db9af40e4d`, `addeb2cd-79ad-4405-9d1c-c456df56c27f`, `ae42549f-8e57-481a-be34-43cd3632b1ea`, `b02023e6-a2b5-4d32-b301-fecb53bb5968`, `ba25572d-47bd-4878-94b7-089661399f58`, `baafa1e3-5316-4bdf-af98-e7105721376a`, `d99041ed-4095-485a-ac47-8bf5dde48d8f`, `e94dcebe-42d8-4dfa-9a68-64d6aab0b10f`, `ed70ebbd-50a6-4918-84c7-5fd6f8d62e97`, `fc106a49-eb90-4b55-afd1-c23d2de7449b`)
+- User ids created: `1' OR '1'='1`, `sec-badip-88c9b8d7`, `sec-burst-88c9b8d7`, `sec-xss-88c9b8d7`
+- Session ids created: 34 (`04de346f-68a2-4c68-b1e1-1cb066c51b95`, `07e2c2ce-52e1-4c58-86f9-42e2c2996b65`, `101a5a97-5d7e-4ccb-8012-7ad5fe133f8c`, `1b619031-2aab-47f9-8451-ccd67f23d214`, `22804dda-6185-4ebe-b1d4-c8541a65e5c4`, `26136872-f369-4904-90e1-f1572eedddcc`, `29c7446f-bbaf-4234-add7-c10f3875a912`, `313f2bfd-4739-4b4a-8d98-8761ab5889ec`, `38aa9eda-c221-4fc8-bc1f-e371e1c805d9`, `3906db81-5f2b-42d7-b1cb-34f626cf92ca`, `49ada574-2dd2-415d-8b2c-a0b6c9126809`, `5d33dc2e-b669-4747-864c-57f652b1ff40`, `681f0013-3e03-43fe-80ee-bffd6576841c`, `68f57e79-0deb-4bcd-b1c6-d0ccf3e1f3ff`, `69fd96bd-bd0a-4dc4-9b21-06fcfe5900e1`, `6c8bac67-d6b6-44f6-8bbd-ead8b0cce90a`, `75774aa4-c8bb-4a64-b872-a2d77311eaff`, `83e184d2-59f0-43a3-a88a-9bee0bdbae21`, `8ae6c08d-e399-45af-a5d3-657df2006643`, `9619509b-560d-4fc4-bb62-db7b06d59cac`, `9a41a937-b4dd-48d7-ae69-69b1f5efeb1b`, `a09b9948-b6e7-492a-80a4-e12a129f0761`, `ab5bef7f-b167-42e3-a1e6-36eb971670c1`, `afb1d635-ea8e-4afc-afb3-933edf1e5eac`, `bf3c02b4-912f-425f-84f9-6b122cec46e3`, `d11c1a13-2bbd-4d53-800a-c29ebfcb8f80`, `d4706a61-7b25-405d-902c-d917922ae084`, `d5d31fa1-eed5-422a-8d89-9dc468b6340c`, `d8ff8802-7af6-46ac-a034-46dc55bea763`, `e425bca3-f002-4924-a15b-f1a75cb463a0`, `e6bd0f6d-742a-4383-a909-00e76a79fef4`, `e6f5a107-604f-41f5-98bc-7ffcf76178fa`, `fafff3ca-181a-4060-8992-2d565a9bda28`, `fcacb401-0d20-411b-bb3e-ba22de64df97`)
 
 ## Notes & limitations
 
