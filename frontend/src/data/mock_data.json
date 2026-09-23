@@ -1,0 +1,99 @@
+{
+  "sessions_list_response": {
+    "total": 6,
+    "page": 1,
+    "limit": 20,
+    "sessions": [
+      {
+        "session_id": "sess_001",
+        "user_id": "user_101",
+        "risk_score": 12,
+        "risk_tier": "low",
+        "device_fingerprint": "fp_a1b2c3",
+        "ip_address": "39.42.10.5",
+        "timestamp": "2026-09-17T09:12:00Z"
+      },
+      {
+        "session_id": "sess_002",
+        "user_id": "user_102",
+        "risk_score": 55,
+        "risk_tier": "medium",
+        "device_fingerprint": "fp_d4e5f6",
+        "ip_address": "182.190.4.22",
+        "timestamp": "2026-09-17T09:20:00Z"
+      },
+      {
+        "session_id": "sess_003",
+        "user_id": "user_103",
+        "risk_score": 88,
+        "risk_tier": "high",
+        "device_fingerprint": "fp_g7h8i9",
+        "ip_address": "103.87.65.11",
+        "timestamp": "2026-09-17T09:25:00Z"
+      },
+      {
+        "session_id": "sess_004",
+        "user_id": "user_104",
+        "risk_score": 5,
+        "risk_tier": "low",
+        "device_fingerprint": "fp_j1k2l3",
+        "ip_address": "39.42.10.9",
+        "timestamp": "2026-09-17T09:30:00Z"
+      },
+      {
+        "session_id": "sess_005",
+        "user_id": "user_105",
+        "risk_score": 71,
+        "risk_tier": "high",
+        "device_fingerprint": "fp_m4n5o6",
+        "ip_address": "45.114.22.3",
+        "timestamp": "2026-09-17T09:33:00Z"
+      },
+      {
+        "session_id": "sess_006",
+        "user_id": "user_106",
+        "risk_score": 44,
+        "risk_tier": "medium",
+        "device_fingerprint": "fp_p7q8r9",
+        "ip_address": "182.190.4.50",
+        "timestamp": "2026-09-17T09:40:00Z"
+      }
+    ]
+  },
+
+  "session_detail_response_example": {
+    "session_id": "sess_003",
+    "user_id": "user_103",
+    "risk_score": 88,
+    "risk_tier": "high",
+    "contributing_signals": {
+      "geo_velocity_score": 0.92,
+      "device_mismatch_score": 0.75,
+      "token_reuse_flag": true
+    },
+    "device_fingerprint": "fp_g7h8i9",
+    "ip_address": "103.87.65.11",
+    "timestamp": "2026-09-17T09:25:00Z",
+    "history": [
+      { "event": "login", "timestamp": "2026-09-17T09:24:00Z" },
+      { "event": "token_refresh", "timestamp": "2026-09-17T09:24:30Z" },
+      { "event": "flagged_high_risk", "timestamp": "2026-09-17T09:25:00Z" }
+    ]
+  },
+
+  "session_score_response_example": {
+    "session_id": "sess_007",
+    "risk_score": 42,
+    "risk_tier": "medium",
+    "contributing_signals": {
+      "geo_velocity_score": 0.35,
+      "device_mismatch_score": 0.10,
+      "token_reuse_flag": false
+    },
+    "timestamp": "2026-09-17T10:32:00Z"
+  },
+
+  "error_response_example": {
+    "detail": "Session not found"
+  }
+}
