@@ -18,7 +18,7 @@ from sqlalchemy import delete, select
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.main import app
-from app.models import RiskEvent, Session, User
+from app.models import AuditLog, RiskEvent, Session, User
 
 client = TestClient(app)
 
@@ -48,6 +48,9 @@ def cleanup_user(user_id: str) -> None:
             session_ids = [row.session_id for row in rows]
             if rows:
                 row_ids = [row.id for row in rows]
+                # audit_log and risk_events both reference sessions.id with no
+                # cascade, so both must be removed before the session rows.
+                db.execute(delete(AuditLog).where(AuditLog.session_id.in_(row_ids)))
                 db.execute(delete(RiskEvent).where(RiskEvent.session_id.in_(row_ids)))
                 db.execute(delete(Session).where(Session.id.in_(row_ids)))
             db.execute(delete(User).where(User.id == user.id))
@@ -407,6 +410,8 @@ def test_session_detail_matches_persisted_after_score(user_id: str) -> None:
         "ip_address",
         "timestamp",
         "history",
+        "ml_anomaly_flag",
+        "ml_decision_score",
     }
     assert body["session_id"] == session_external_id
     assert body["user_id"] == user_id
@@ -419,7 +424,16 @@ def test_session_detail_matches_persisted_after_score(user_id: str) -> None:
         "device_mismatch_score",
         "token_reuse_flag",
         "login_burst_count",
+        "user_baseline_status",
+        "device_seen_before_count",
+        "geo_velocity_user_percentile",
     }
+    # The additive ML signal is now persisted with the risk event, so this
+    # endpoint reports exactly what the scoring response returned.
+    assert body["ml_anomaly_flag"] == scored["ml_anomaly_flag"]
+    assert body["ml_decision_score"] == pytest.approx(
+        scored["ml_decision_score"], rel=1e-9, abs=1e-9
+    )
     assert body["device_fingerprint"] == DOMAIN_DEVICE
     assert body["ip_address"] == "192.168.1.99"
 
@@ -478,6 +492,15 @@ def test_session_detail_returns_latest_event_and_full_history(user_id: str) -> N
     assert body["contributing_signals"]["geo_velocity_kmh"] == 950.0
     assert body["contributing_signals"]["token_reuse_flag"] is True
     assert "risk_score_unrounded" not in body["contributing_signals"]
+    # These rows were seeded directly without the ML keys, so the additive ML
+    # signal must read as unknown (null) rather than a fabricated default.
+    assert body["ml_anomaly_flag"] is None
+    assert body["ml_decision_score"] is None
+    # Same rule for the additive per-user baseline keys: these rows predate it,
+    # so they read as unknown (null) rather than a fabricated "no_history"/0.
+    assert body["contributing_signals"]["user_baseline_status"] is None
+    assert body["contributing_signals"]["device_seen_before_count"] is None
+    assert body["contributing_signals"]["geo_velocity_user_percentile"] is None
     # History lists every event, chronological ascending.
     history = body["history"]
     assert [entry["event"] for entry in history] == ["risk_scored", "risk_scored"]

@@ -5,12 +5,16 @@ One pass per request, in this exact order:
     load history (Postgres) -> live signals (device, geo, token, burst)
     -> frozen baseline scorer (imported, unmodified)
     -> ML signal (Isolation Forest, loaded once at startup)
+    -> per-user adaptive baseline (historical aggregates, additive only)
     -> persist to Postgres (commit first) -> update Redis state (after commit)
     -> response
 
+The ML signal and the per-user baseline are both computed outside the frozen
+scorer and reported alongside it; neither is fused into the risk score.
+
 Failure policy:
-- Postgres unavailable (history read or persistence), including client-side
-  parameter rejection by the database driver (e.g. NUL bytes in text
+- Postgres unavailable (history read, baseline read, or persistence), including
+  client-side parameter rejection by the database driver (e.g. NUL bytes in text
   parameters), Redis unavailable during signal computation, the GeoLite2
   database missing, or the ML signal unavailable (missing/corrupt artifact,
   invalid features): the corresponding exception propagates (mapped to HTTP
@@ -41,7 +45,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.models import RiskEvent, Session, User
+from app.models import AuditLog, RiskEvent, Session, User
 from app.services import geo
 from app.services.baseline_scorer import score_session as frozen_score_session
 from app.services.ml_runtime import ml_runtime
@@ -50,11 +54,15 @@ from app.services.session_store import (
     update_session_context,
     verify_refresh_token_hash,
 )
+from app.services.user_baseline import compute_user_baseline
 
 logger = logging.getLogger(__name__)
 
 LOGIN_BURST_WINDOW_SECONDS: int = 60
 LOGIN_BURST_KEY_TTL_SECONDS: int = 120
+
+# audit_log.event_type written for every scored session.
+AUDIT_EVENT_RISK_SCORED: str = "risk_scored"
 
 _redis: redis.Redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
 
@@ -117,19 +125,42 @@ def process_session_score(
         velocity_kmh, device_mismatch, token_reuse_flag, burst_count
     )
 
+    # Per-user adaptive baseline (app/services/user_baseline.py). Computed here,
+    # before persistence, so this session never contributes to its own
+    # baseline. Like the ML signal it is additive only: it never reaches
+    # frozen_score_session, it does not alter risk_score or risk_tier, and it is
+    # reported next to the frozen signals.
+    user_baseline = compute_user_baseline(
+        user_id=user_id,
+        device_fingerprint=device_fingerprint,
+        current_velocity_kmh=velocity_kmh,
+    )
+
     contributing_signals: dict[str, Any] = {
         "geo_velocity_kmh": velocity_kmh,
         "geo_location_status": geo_status,
         "device_mismatch_score": device_mismatch,
         "token_reuse_flag": token_reuse_flag,
         "login_burst_count": burst_count,
+        "user_baseline_status": user_baseline.status,
+        "device_seen_before_count": user_baseline.device_seen_before_count,
+        "geo_velocity_user_percentile": user_baseline.geo_velocity_user_percentile,
     }
 
     # risk_score is an int per the API/DB contract: rounded from the unrounded
     # frozen score ONLY for display/persistence -- the tier above was
     # classified by the frozen scorer on the unrounded value.
     risk_score = int(round(raw_score))
-    persisted_signals = {**contributing_signals, "risk_score_unrounded": raw_score}
+    # Extra stored keys beyond the ContributingSignals contract: the unrounded
+    # frozen score, plus the additive ML signal. The ML values are persisted
+    # alongside -- never fused into -- the frozen score, so the read endpoint
+    # can report exactly what POST /session/score returned.
+    persisted_signals = {
+        **contributing_signals,
+        "risk_score_unrounded": raw_score,
+        "ml_anomaly_flag": ml_anomaly_flag,
+        "ml_decision_score": ml_decision_score,
+    }
 
     # Postgres first (durable audit trail), Redis second (fast-access cache).
     session_id = _persist_scored_session(
@@ -267,7 +298,9 @@ def _persist_scored_session(
     risk_tier: str,
     contributing_signals: dict[str, Any],
 ) -> str:
-    """Persist user (find-or-create), session, and risk event; returns session_id.
+    """Persist user (find-or-create), session, risk event, and audit entry.
+
+    Returns the external session_id.
 
     The user row is created with INSERT ... ON CONFLICT DO NOTHING followed by
     a re-select, which makes concurrent first-ever requests race-safe: a losing
@@ -277,7 +310,9 @@ def _persist_scored_session(
     other database error still propagates (nothing is swallowed silently).
 
     Runs in a single Postgres transaction: any failure rolls back and raises,
-    and the caller never reaches the Redis update step (nothing partial).
+    and the caller never reaches the Redis update step (nothing partial). The
+    audit_log entry is part of that same transaction, so a scored session can
+    never exist without its audit trail.
     """
     try:
         with SessionLocal() as db:
@@ -307,6 +342,23 @@ def _persist_scored_session(
                     risk_score=risk_score,
                     risk_tier=risk_tier,
                     contributing_signals=contributing_signals,
+                )
+            )
+            # Append-only audit trail for this decision. Denormalized on
+            # purpose (user_id and the signal summary live inside `details`)
+            # so the entry stays self-describing as a historical record.
+            db.add(
+                AuditLog(
+                    event_type=AUDIT_EVENT_RISK_SCORED,
+                    session_id=session_row.id,
+                    details={
+                        "user_id": user_id,
+                        "risk_score": risk_score,
+                        "risk_tier": risk_tier,
+                        "signals": contributing_signals,
+                        "scored_at": now.isoformat(),
+                    },
+                    created_at=now,
                 )
             )
             db.commit()

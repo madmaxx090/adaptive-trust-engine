@@ -25,6 +25,7 @@ from app.services.risk_pipeline import (
     RiskPipelineUnavailableError,
     process_session_score,
 )
+from app.services.user_baseline import UserBaselineUnavailableError
 
 router = APIRouter(tags=["session"])
 
@@ -52,6 +53,7 @@ def score_session(payload: SessionScoreRequest) -> SessionScoreResponse:
         GeoIPDatabaseUnavailableError,
         RiskPipelineUnavailableError,
         MLSignalError,
+        UserBaselineUnavailableError,
     ) as exc:
         # Infrastructure unavailable -> 503. The full underlying exception
         # (including driver SQL/constraint details) is logged server-side only.
@@ -206,6 +208,10 @@ def get_session(session_id: str) -> SessionDetailResponse:
         device_fingerprint=row.device_fingerprint,
         ip_address=row.ip_address,
         timestamp=row.created_at,
+        # Stored extra keys (see risk_pipeline.persisted_signals); absent on
+        # risk events persisted before the ML signal was stored -> None.
+        ml_anomaly_flag=row.contributing_signals.get("ml_anomaly_flag"),
+        ml_decision_score=row.contributing_signals.get("ml_decision_score"),
         history=[
             SessionHistoryEntry(event="risk_scored", timestamp=created_at)
             for created_at in history_rows

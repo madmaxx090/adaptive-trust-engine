@@ -367,6 +367,12 @@ def test_normal_low_risk_session_both_signals_low(
         "device_mismatch_score": 0.0,
         "token_reuse_flag": False,
         "login_burst_count": 1,
+        # Additive per-user baseline: the seeded prior session used this same
+        # device and carries no risk event, so there is no measured velocity
+        # history to rank the current 100.0 km/h against.
+        "user_baseline_status": "ok",
+        "device_seen_before_count": 1,
+        "geo_velocity_user_percentile": None,
     }
     assert body["risk_tier"] == "low"
     _assert_score_consistent(body)
@@ -468,8 +474,9 @@ def test_ml_failure_returns_503_without_internal_details(
 
 
 def test_score_response_has_exact_expected_keys(user_id: str) -> None:
-    """Additive-only contract: the established keys stay unchanged and the
-    two new ML keys are the only additions."""
+    """Additive-only contract: the established keys stay unchanged, the two ML
+    keys are the only additions to the response body, and the three per-user
+    baseline keys are the only additions to contributing_signals."""
     response = client.post("/session/score", json=_payload(user_id))
     assert response.status_code == 200
     body = response.json()
@@ -487,6 +494,9 @@ def test_score_response_has_exact_expected_keys(user_id: str) -> None:
         "device_mismatch_score",
         "token_reuse_flag",
         "login_burst_count",
+        "user_baseline_status",
+        "device_seen_before_count",
+        "geo_velocity_user_percentile",
     }
     assert isinstance(body["ml_anomaly_flag"], bool)
     assert isinstance(body["ml_decision_score"], float)

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, session
+from app.api import audit, health, session
 from app.core.config import settings
 from app.services.ml_runtime import ml_runtime
 
@@ -35,3 +35,4 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(session.router)
+app.include_router(audit.router)

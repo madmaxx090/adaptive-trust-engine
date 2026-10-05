@@ -49,7 +49,7 @@ from sqlalchemy import delete, func, select
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.main import app
-from app.models import RiskEvent, Session, User
+from app.models import AuditLog, RiskEvent, Session, User
 from app.services import geo
 from app.services.baseline_scorer import (
     classify_tier,
@@ -90,6 +90,9 @@ def cleanup_user(user_id: str) -> None:
             session_ids = [row.session_id for row in rows]
             if rows:
                 row_ids = [row.id for row in rows]
+                # audit_log and risk_events both reference sessions.id with no
+                # cascade, so both must be removed before the session rows.
+                db.execute(delete(AuditLog).where(AuditLog.session_id.in_(row_ids)))
                 db.execute(delete(RiskEvent).where(RiskEvent.session_id.in_(row_ids)))
                 db.execute(delete(Session).where(Session.id.in_(row_ids)))
             db.execute(delete(User).where(User.id == user.id))
@@ -248,12 +251,23 @@ def _assert_response_matches_persisted(body: dict) -> None:
     assert event.risk_score == body["risk_score"]
     assert event.risk_tier == body["risk_tier"]
     signals = body["contributing_signals"]
-    assert set(persisted) == set(signals) | {"risk_score_unrounded"}
+    assert set(persisted) == set(signals) | {
+        "risk_score_unrounded",
+        "ml_anomaly_flag",
+        "ml_decision_score",
+    }
     for key, value in signals.items():
         if isinstance(value, float):
             assert persisted[key] == pytest.approx(value, rel=1e-9, abs=1e-9)
         else:
             assert persisted[key] == value
+    # The additive ML signal is persisted verbatim as extra stored keys (not
+    # part of the ContributingSignals contract), so the read endpoints can
+    # report exactly what this response's top-level ML fields returned.
+    assert persisted["ml_anomaly_flag"] == body["ml_anomaly_flag"]
+    assert persisted["ml_decision_score"] == pytest.approx(
+        body["ml_decision_score"], rel=1e-9, abs=1e-9
+    )
     raw, tier, _ = frozen_score_session(
         signals["geo_velocity_kmh"],
         signals["device_mismatch_score"],
@@ -338,6 +352,11 @@ def test_boundary_exact_40_0_is_low(user_id: str, monkeypatch: pytest.MonkeyPatc
         "device_mismatch_score": 0.0,
         "token_reuse_flag": True,
         "login_burst_count": 30,
+        # Additive per-user baseline: one seeded prior session on this device,
+        # with no risk event, so there is no measured velocity to rank against.
+        "user_baseline_status": "ok",
+        "device_seen_before_count": 1,
+        "geo_velocity_user_percentile": None,
     }
     assert body["risk_score"] == 40
     assert body["risk_tier"] == "low"
@@ -365,6 +384,9 @@ def test_boundary_40_01_is_medium(user_id: str, monkeypatch: pytest.MonkeyPatch)
         "device_mismatch_score": 0.0,
         "token_reuse_flag": True,
         "login_burst_count": 30,
+        "user_baseline_status": "ok",
+        "device_seen_before_count": 1,
+        "geo_velocity_user_percentile": None,
     }
     assert body["risk_score"] == 40  # rounds to 40 while the tier is medium
     assert body["risk_tier"] == "medium"
@@ -391,6 +413,9 @@ def test_boundary_exact_70_0_is_medium(user_id: str, monkeypatch: pytest.MonkeyP
         "device_mismatch_score": 1.0,
         "token_reuse_flag": True,
         "login_burst_count": 30,
+        "user_baseline_status": "ok",
+        "device_seen_before_count": 0,
+        "geo_velocity_user_percentile": None,
     }
     assert body["risk_score"] == 70
     assert body["risk_tier"] == "medium"
@@ -418,6 +443,9 @@ def test_boundary_70_01_is_high(user_id: str, monkeypatch: pytest.MonkeyPatch) -
         "device_mismatch_score": 1.0,
         "token_reuse_flag": True,
         "login_burst_count": 30,
+        "user_baseline_status": "ok",
+        "device_seen_before_count": 0,
+        "geo_velocity_user_percentile": None,
     }
     assert body["risk_score"] == 70  # rounds to 70 while the tier is high
     assert body["risk_tier"] == "high"
@@ -473,7 +501,13 @@ def _assert_combo(
         "token_reuse_flag": token_reuse,
         "login_burst_count": burst_count,
     }
-    assert body["contributing_signals"] == engineered
+    signals = body["contributing_signals"]
+    # Only the frozen five are engineered here. The additive per-user baseline
+    # keys are also present but their device count depends on which device each
+    # combination seeded, so they are asserted in tests/test_user_baseline.py
+    # and by the exact-key-set contract test instead.
+    assert {key: signals[key] for key in engineered} == engineered
+    assert signals["user_baseline_status"] == "ok"  # one seeded prior session
     expected_raw, expected_tier, _ = frozen_score_session(
         0.0, device_mismatch, token_reuse, burst_count
     )

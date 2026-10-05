@@ -18,7 +18,7 @@ from sqlalchemy.exc import OperationalError
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.main import app
-from app.models import RiskEvent, Session, User
+from app.models import AuditLog, RiskEvent, Session, User
 from app.services import geo, risk_pipeline
 from app.services.baseline_scorer import score_session as frozen_score_session
 
@@ -55,6 +55,9 @@ def cleanup_user(user_id: str) -> None:
             session_ids = [row.session_id for row in rows]
             if rows:
                 row_ids = [row.id for row in rows]
+                # audit_log and risk_events both reference sessions.id with no
+                # cascade, so both must be removed before the session rows.
+                db.execute(delete(AuditLog).where(AuditLog.session_id.in_(row_ids)))
                 db.execute(delete(RiskEvent).where(RiskEvent.session_id.in_(row_ids)))
                 db.execute(delete(Session).where(Session.id.in_(row_ids)))
             db.execute(delete(User).where(User.id == user.id))
@@ -167,6 +170,11 @@ def test_first_ever_session(user_id: str) -> None:
         "device_mismatch_score": 0.0,
         "token_reuse_flag": False,
         "login_burst_count": 1,
+        # Additive per-user baseline: cold start, a brand-new user has no prior
+        # sessions to build a device count or a velocity percentile from.
+        "user_baseline_status": "no_history",
+        "device_seen_before_count": 0,
+        "geo_velocity_user_percentile": None,
     }
     assert body["risk_tier"] == "low"
     assert isinstance(body["session_id"], str) and body["session_id"]
