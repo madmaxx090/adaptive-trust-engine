@@ -49,38 +49,63 @@ function KeyValue({ label, value, mono = false }) {
   );
 }
 
-export default function SessionInspectorPanel({ session, detailExample }) {
+// session: the row clicked in the list (basic fields only)
+// detail: the REAL fetched detail from GET /sessions/{id} (contributing_signals, history)
+// loading / error: state of the detail fetch
+export default function SessionInspectorPanel({ session, detail, loading, error }) {
   if (!session) {
     return (
       <div className="session-empty-inspector">
-        <div className="empty-inspector-icon">⌁</div>
+        <div className="empty-inspector-icon">✕</div>
         <h3>Select a session</h3>
         <p>Click a session in the list to inspect its behavior and risk signals.</p>
       </div>
     );
   }
 
-  const hasDetailedSignals = session.session_id === detailExample.session_id;
-  const detail = hasDetailedSignals ? detailExample : session;
-  const signals = hasDetailedSignals ? detailExample.contributing_signals : null;
-  const history = hasDetailedSignals ? detailExample.history : [];
+  if (loading) {
+    return (
+      <div className="session-empty-inspector">
+        <div className="empty-inspector-icon">…</div>
+        <h3>Loading session details...</h3>
+      </div>
+    );
+  }
 
-  const derivedBehavior = signals
-    ? Math.round(((signals.geo_velocity_score + signals.device_mismatch_score) / 2) * 100)
+  if (error) {
+    return (
+      <div className="session-empty-inspector">
+        <div className="empty-inspector-icon">!</div>
+        <h3>Unable to load session details</h3>
+        <p>{error}</p>
+      </div>
+    );
+  }
+
+  // signals now come from the REAL backend response, real field names
+  const signals = detail?.contributing_signals || null;
+  const history = detail?.history || [];
+
+  // geo_velocity_kmh is an uncapped real speed value, not a 0-1 score like the
+  // old mock's geo_velocity_score -- normalize it against the same 1000 km/h
+  // cap the baseline scorer itself uses, purely for this 0-100% bar display.
+  const geoVelocityDisplayRatio = signals
+    ? Math.min(signals.geo_velocity_kmh / 1000, 1)
     : null;
 
-  const apiResponse = hasDetailedSignals
-    ? detailExample
-    : {
-        session_id: session.session_id,
-        user_id: session.user_id,
-        risk_score: session.risk_score,
-        risk_tier: session.risk_tier,
-        device_fingerprint: session.device_fingerprint,
-        ip_address: session.ip_address,
-        timestamp: session.timestamp,
-        note: "Detailed contributing signals are not present for this session in mock_data.json.",
-      };
+  const derivedBehavior = signals
+    ? Math.round(((geoVelocityDisplayRatio + signals.device_mismatch_score) / 2) * 100)
+    : null;
+
+  const apiResponse = detail || {
+    session_id: session.session_id,
+    user_id: session.user_id,
+    risk_score: session.risk_score,
+    risk_tier: session.risk_tier,
+    device_fingerprint: session.device_fingerprint,
+    ip_address: session.ip_address,
+    timestamp: session.timestamp,
+  };
 
   return (
     <div className="session-inspector-panel">
@@ -111,18 +136,20 @@ export default function SessionInspectorPanel({ session, detailExample }) {
             <DetailCard icon="◎" title="Geo-velocity analysis">
               {signals ? (
                 <>
-                  <SignalBar label="Geo velocity score" value={signals.geo_velocity_score} tone="red" />
+                  <KeyValue label="Velocity" value={`${signals.geo_velocity_kmh.toFixed(1)} km/h`} />
+                  <KeyValue label="Location status" value={signals.geo_location_status} />
+                  <SignalBar label="Relative velocity (capped at 1000 km/h)" value={geoVelocityDisplayRatio} tone="red" />
                   <KeyValue
                     label="Interpretation"
-                    value={signals.geo_velocity_score >= 0.7 ? "High location-jump risk" : "Low location-jump risk"}
+                    value={geoVelocityDisplayRatio >= 0.7 ? "High location-jump risk" : "Low location-jump risk"}
                   />
                 </>
               ) : (
-                <p className="analysis-unavailable">Detailed geo-velocity signal is not available for this mock session.</p>
+                <p className="analysis-unavailable">Detailed geo-velocity signal is not available for this session.</p>
               )}
             </DetailCard>
 
-            <DetailCard icon="⌁" title="Token analysis">
+            <DetailCard icon="✕" title="Token analysis">
               {signals ? (
                 <>
                   <KeyValue label="Token reuse detected" value={signals.token_reuse_flag ? "Yes" : "No"} />
@@ -132,19 +159,20 @@ export default function SessionInspectorPanel({ session, detailExample }) {
                   />
                 </>
               ) : (
-                <p className="analysis-unavailable">Token reuse detail is not available for this mock session.</p>
+                <p className="analysis-unavailable">Token reuse detail is not available for this session.</p>
               )}
             </DetailCard>
 
-            <DetailCard icon="⌁" title="Behavioral analysis">
+            <DetailCard icon="✕" title="Behavioral analysis">
               {signals ? (
                 <>
+                  <KeyValue label="Login burst count" value={signals.login_burst_count} />
                   <SignalBar label="Behavior anomaly index" value={derivedBehavior / 100} tone="amber" />
                   <KeyValue
                     label="Activity pattern"
                     value={derivedBehavior >= 70 ? "Unusual activity" : derivedBehavior >= 40 ? "Needs review" : "Normal pattern"}
                   />
-                  <small className="derived-note">Derived in the frontend from the available geo/device mock signals.</small>
+                  <small className="derived-note">Derived in the frontend from the real geo/device signals returned by the backend.</small>
                 </>
               ) : (
                 <p className="analysis-unavailable">Behavioral signal details are waiting for the backend detail response.</p>
@@ -156,7 +184,7 @@ export default function SessionInspectorPanel({ session, detailExample }) {
               {signals ? (
                 <SignalBar label="Device mismatch score" value={signals.device_mismatch_score} tone="amber" />
               ) : (
-                <p className="analysis-unavailable">Device mismatch score is not available for this mock session.</p>
+                <p className="analysis-unavailable">Device mismatch score is not available for this session.</p>
               )}
             </DetailCard>
 
@@ -188,7 +216,7 @@ export default function SessionInspectorPanel({ session, detailExample }) {
                 ))}
               </div>
             ) : (
-              <p className="analysis-unavailable">No history array is available for this session in the current mock dataset.</p>
+              <p className="analysis-unavailable">No history is available for this session yet.</p>
             )}
           </section>
         </div>

@@ -10,8 +10,10 @@ function formatTime(value) {
 
 export default function SessionsWorkspace({
   sessions,
-  detailExample,
   selectedSession,
+  selectedDetail,
+  detailLoading,
+  detailError,
   onSelectSession,
   onNavigate,
   onToast,
@@ -124,8 +126,10 @@ export default function SessionsWorkspace({
 
         <section className="panel merged-session-detail-panel">
           <SessionInspectorPanel
-            session={selectedSession || detailExample}
-            detailExample={detailExample}
+            session={selectedSession}
+            detail={selectedDetail}
+            loading={detailLoading}
+            error={detailError}
           />
         </section>
       </div>

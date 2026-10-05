@@ -11,10 +11,10 @@ export default function RiskAnalytics({ sessions }) {
     { name: "Medium", value: medium, fill: "#e7aa38" },
     { name: "High", value: high, fill: "#df5e6d" },
   ];
-  const bars = sessions.map((s) => ({ session: s.session_id.replace("sess_", "#"), score: s.risk_score, tier: s.risk_tier }));
-  const suspiciousPercent = Math.round(((medium + high) / sessions.length) * 100);
-  const maxRisk = Math.max(...sessions.map((s) => s.risk_score));
-  const avgRisk = (sessions.reduce((sum, s) => sum + s.risk_score, 0) / sessions.length).toFixed(1);
+  const bars = sessions.map((s) => ({ session: `#${s.session_id.slice(0, 8)}`, score: s.risk_score, tier: s.risk_tier }));
+  const suspiciousPercent = sessions.length ? Math.round(((medium + high) / sessions.length) * 100) : 0;
+  const maxRisk = sessions.length ? Math.max(...sessions.map((s) => s.risk_score)) : 0;
+  const avgRisk = (sessions.length ? sessions.reduce((sum, s) => sum + s.risk_score, 0) / sessions.length : 0).toFixed(1);
   const barColor = (tier) => tier === "high" ? "#df5e6d" : tier === "medium" ? "#e7aa38" : "#3eb879";
 
   return (

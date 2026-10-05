@@ -2,7 +2,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 
 export default function RiskChart({ sessions, height = 300 }) {
   const data = sessions.map((session) => ({
-    session: session.session_id.replace("sess_", "#"),
+    session: `#${session.session_id.slice(0, 8)}`,
     risk: session.risk_score,
   }));
 

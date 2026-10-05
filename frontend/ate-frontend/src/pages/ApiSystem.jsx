@@ -6,7 +6,7 @@ import {
   scoreSession,
 } from "../services/api";
 
-export default function ApiSystem({ mockData, onToast }) {
+export default function ApiSystem({ onToast }) {
   const endpoints = useMemo(() => [
     {
       key: "GET /health",
@@ -20,23 +20,67 @@ export default function ApiSystem({ mockData, onToast }) {
       method: "GET",
       path: "/sessions",
       description: "Load the session list used by the main dashboard.",
-      example: mockData.sessions_list_response,
+      example: {
+        total: 1,
+        page: 1,
+        limit: 20,
+        sessions: [
+          {
+            session_id: "5f2c9d1a-3b4e-4c7d-8a91-0e6f1b2c3d4e",
+            user_id: "user_107",
+            risk_score: 88,
+            risk_tier: "high",
+            device_fingerprint: "ate_demo_browser_fingerprint",
+            ip_address: "39.42.10.25",
+            timestamp: "2026-09-25T06:28:49Z",
+          },
+        ],
+      },
     },
     {
       key: "GET /sessions/{session_id}",
       method: "GET",
-      path: "/sessions/sess_003",
-      description: "Load a full session detail response.",
-      example: mockData.session_detail_response_example,
+      path: "/sessions/{session_id}",
+      description: "Load a full detail response for the most recent real session.",
+      example: {
+        session_id: "5f2c9d1a-3b4e-4c7d-8a91-0e6f1b2c3d4e",
+        user_id: "user_107",
+        risk_score: 88,
+        risk_tier: "high",
+        contributing_signals: {
+          geo_velocity_kmh: 933.7,
+          geo_location_status: "ok",
+          device_mismatch_score: 1.0,
+          token_reuse_flag: true,
+          login_burst_count: 12,
+        },
+        device_fingerprint: "ate_demo_browser_fingerprint",
+        ip_address: "39.42.10.25",
+        timestamp: "2026-09-25T06:28:49Z",
+        history: [{ event: "risk_scored", timestamp: "2026-09-25T06:28:49Z" }],
+      },
     },
     {
       key: "POST /session/score",
       method: "POST",
       path: "/session/score",
       description: "Score a session using user, IP address and device fingerprint.",
-      example: mockData.session_score_response_example,
+      example: {
+        session_id: "5f2c9d1a-3b4e-4c7d-8a91-0e6f1b2c3d4e",
+        risk_score: 88,
+        risk_tier: "high",
+        contributing_signals: {
+          geo_velocity_kmh: 933.7,
+          geo_location_status: "ok",
+          device_mismatch_score: 1.0,
+          token_reuse_flag: true,
+          login_burst_count: 12,
+        },
+        ml_anomaly_flag: false,
+        ml_decision_score: 0.0721,
+      },
     },
-  ], [mockData]);
+  ], []);
 
   const [selectedKey, setSelectedKey] = useState(endpoints[0].key);
   const [checking, setChecking] = useState(false);
@@ -61,7 +105,11 @@ export default function ApiSystem({ mockData, onToast }) {
       } else if (selected.key === "GET /sessions") {
         data = await getSessions();
       } else if (selected.key === "GET /sessions/{session_id}") {
-        data = await getSessionDetail("sess_003");
+        const list = await getSessions();
+        if (!list.sessions.length) {
+          throw new Error("No sessions available to load a detail for yet");
+        }
+        data = await getSessionDetail(list.sessions[0].session_id);
       } else {
         data = await scoreSession({
           user_id: "user_107",
@@ -102,7 +150,7 @@ export default function ApiSystem({ mockData, onToast }) {
           <strong className={backendStatus === "Online" ? "health-good" : backendStatus === "Unavailable" ? "health-bad" : ""}>
             {backendStatus}
           </strong>
-          <small>http://localhost:8000</small>
+          <small>http://localhost:8008</small>
         </div>
         <div className="health-card">
           <span>Last latency</span>
@@ -173,7 +221,7 @@ export default function ApiSystem({ mockData, onToast }) {
             <div className="api-error-state">
               <strong>Backend request failed</strong>
               <p>{requestError}</p>
-              <small>This is expected until your backend is running at localhost:8000.</small>
+              <small>Check that the backend is reachable at http://localhost:8008, then retry.</small>
             </div>
           ) : (
             <>

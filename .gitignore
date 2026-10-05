@@ -1,4 +1,4 @@
-﻿.env
+.env
 .venv/
 venv/
 __pycache__/
@@ -12,3 +12,10 @@ data/geoip/*.mmdb
 
 # IEEE-CIS Fraud Detection dataset (large local analysis input; never committed)
 data/ieee_cis/
+
+# Local-only artifacts
+.env.bak-before-tests
+data/geoip/GeoLite2-City_20260922/
+risk_events_export.csv
+sessions_export.csv
+frontend/node_modules/

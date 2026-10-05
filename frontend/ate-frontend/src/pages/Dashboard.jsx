@@ -88,7 +88,9 @@ function SignalInsight({ label, risk, explanation }) {
 
 export default function Dashboard({
   sessions,
-  detailExample,
+  selectedDetail,
+  detailLoading,
+  detailError,
   onNavigate,
   onOpenSession,
 }) {
@@ -200,7 +202,7 @@ export default function Dashboard({
             </div>
           </div>
           <p>
-            Derived from current mock risk average
+            Derived from current live risk average
             <strong>{averageRisk.toFixed(1)}</strong>
           </p>
         </div>
@@ -220,7 +222,7 @@ export default function Dashboard({
             <div>
               <span className="command-kicker">THREAT REPLAY</span>
               <h2>Authentication Event</h2>
-              <p>Animated walkthrough of your mock session stream</p>
+              <p>Animated walkthrough of your live session stream</p>
             </div>
             <span className={`replay-status ${replaying ? "playing" : ""}`}>
               {replaying ? "PLAYING" : "PAUSED"}
@@ -277,33 +279,54 @@ export default function Dashboard({
           <div className="panel-heading">
             <div>
               <span className="command-kicker">EXPLAINABLE AI SPOTLIGHT</span>
-              <h2>Why sess_003 was flagged</h2>
-              <p>Transparent risk reasoning from the supplied session detail mock</p>
+              <h2>{selectedDetail ? `Why ${selectedDetail.session_id} was flagged` : "Explainability spotlight"}</h2>
+              <p>Transparent risk reasoning from the live session detail endpoint</p>
             </div>
-            <RiskBadge tier={detailExample.risk_tier} />
+            {selectedDetail && <RiskBadge tier={selectedDetail.risk_tier} />}
           </div>
 
-          <div className="explainability-stack">
-            <SignalInsight
-              label="Geo velocity anomaly"
-              risk={detailExample.contributing_signals.geo_velocity_score}
-              explanation="A high value suggests the login movement pattern is geographically unusual."
-            />
-            <SignalInsight
-              label="Device mismatch"
-              risk={detailExample.contributing_signals.device_mismatch_score}
-              explanation="The observed device differs strongly from the expected session identity."
-            />
-            <SignalInsight
-              label="Token reuse"
-              risk={detailExample.contributing_signals.token_reuse_flag ? 1 : 0}
-              explanation="A reused token is present in this mock session and contributes to the high-risk result."
-            />
-          </div>
+          {detailLoading ? (
+            <p className="analysis-unavailable">Loading session detail from the backend...</p>
+          ) : detailError ? (
+            <p className="analysis-unavailable">Unable to load session detail: {detailError}</p>
+          ) : selectedDetail ? (
+            <>
+              <div className="explainability-stack">
+                <SignalInsight
+                  label="Geo velocity anomaly"
+                  risk={Math.min(selectedDetail.contributing_signals.geo_velocity_kmh / 1000, 1)}
+                  explanation={`Observed ${selectedDetail.contributing_signals.geo_velocity_kmh.toFixed(1)} km/h (location status: ${selectedDetail.contributing_signals.geo_location_status}). A high value suggests the login movement pattern is geographically unusual.`}
+                />
+                <SignalInsight
+                  label="Device mismatch"
+                  risk={selectedDetail.contributing_signals.device_mismatch_score}
+                  explanation={selectedDetail.contributing_signals.device_mismatch_score > 0
+                    ? "The observed device differs strongly from the expected session identity."
+                    : "The observed device matches the expected session identity."}
+                />
+                <SignalInsight
+                  label="Token reuse"
+                  risk={selectedDetail.contributing_signals.token_reuse_flag ? 1 : 0}
+                  explanation={selectedDetail.contributing_signals.token_reuse_flag
+                    ? "A reused token is present in this session and contributes to its risk result."
+                    : "No token reuse was detected for this session."}
+                />
+                <SignalInsight
+                  label="Login burst anomaly"
+                  risk={Math.min(selectedDetail.contributing_signals.login_burst_count / 30, 1)}
+                  explanation={`Observed ${selectedDetail.contributing_signals.login_burst_count} rapid logins in the burst window (scorer cap: 30).`}
+                />
+              </div>
 
-          <button className="insight-link" type="button" onClick={() => onOpenSession(detailExample)}>
-            Open explainability inspector →
-          </button>
+              <button className="insight-link" type="button" onClick={() => onOpenSession(selectedDetail)}>
+                Open explainability inspector →
+              </button>
+            </>
+          ) : (
+            <p className="analysis-unavailable">
+              No session detail loaded yet — open a session from the radar, replay feed, or session list to spotlight its explanation here.
+            </p>
+          )}
         </div>
 
         <div className="panel pulse-panel">
