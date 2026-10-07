@@ -98,6 +98,12 @@ def cleanup_user(user_id: str) -> None:
             db.execute(delete(User).where(User.id == user.id))
             db.commit()
     _redis.delete(f"ate:login_burst:{user_id}")
+    # The cohort signal files this user_id under every device fingerprint and
+    # token hash it used; those keys cannot be derived from the user id alone,
+    # so scan the prefix and withdraw the user from each set. Without this the
+    # distinct-account counts leak between tests (they share fingerprints).
+    for cohort_key in _redis.scan_iter(match="ate:cohort:*", count=500):
+        _redis.zrem(cohort_key, user_id)
     keys: list[str] = []
     for session_id in session_ids:
         keys.extend(
@@ -357,6 +363,11 @@ def test_boundary_exact_40_0_is_low(user_id: str, monkeypatch: pytest.MonkeyPatc
         "user_baseline_status": "ok",
         "device_seen_before_count": 1,
         "geo_velocity_user_percentile": None,
+        # Additive cross-account cohort: this fixture user is the only account on
+        # this fingerprint and on this token hash in the window. Both counts
+        # include the current request, so a lone account reads 1, not 0.
+        "device_cohort_user_count": 1,
+        "token_cohort_user_count": 1,
     }
     assert body["risk_score"] == 40
     assert body["risk_tier"] == "low"
@@ -387,6 +398,8 @@ def test_boundary_40_01_is_medium(user_id: str, monkeypatch: pytest.MonkeyPatch)
         "user_baseline_status": "ok",
         "device_seen_before_count": 1,
         "geo_velocity_user_percentile": None,
+        "device_cohort_user_count": 1,
+        "token_cohort_user_count": 1,
     }
     assert body["risk_score"] == 40  # rounds to 40 while the tier is medium
     assert body["risk_tier"] == "medium"
@@ -416,6 +429,8 @@ def test_boundary_exact_70_0_is_medium(user_id: str, monkeypatch: pytest.MonkeyP
         "user_baseline_status": "ok",
         "device_seen_before_count": 0,
         "geo_velocity_user_percentile": None,
+        "device_cohort_user_count": 1,
+        "token_cohort_user_count": 1,
     }
     assert body["risk_score"] == 70
     assert body["risk_tier"] == "medium"
@@ -446,6 +461,8 @@ def test_boundary_70_01_is_high(user_id: str, monkeypatch: pytest.MonkeyPatch) -
         "user_baseline_status": "ok",
         "device_seen_before_count": 0,
         "geo_velocity_user_percentile": None,
+        "device_cohort_user_count": 1,
+        "token_cohort_user_count": 1,
     }
     assert body["risk_score"] == 70  # rounds to 70 while the tier is high
     assert body["risk_tier"] == "high"
@@ -1019,6 +1036,12 @@ def _assert_concurrent_outcome(
         # concurrency; bounds are (current attempt included, at most all
         # attempts). The final ZSET state below is the deterministic check.
         assert isinstance(burst, int) and 1 <= burst <= len(bodies)
+        # Cohort race lock: every concurrent request comes from the SAME account,
+        # so the distinct-account count must be exactly 1 in every response. This
+        # is deterministic even though the burst count above is not -- the
+        # per-request MULTI/EXEC pipelines serialize, and ZADD updates the
+        # existing member instead of adding a duplicate.
+        assert body["contributing_signals"]["device_cohort_user_count"] == 1
         _assert_response_matches_persisted(body)
     # All attempts were recorded within the rolling window and every
     # per-request pipeline prunes only members older than 60s, so the final

@@ -19,6 +19,7 @@ from app.schemas.session import (
     SessionScoreRequest,
     SessionScoreResponse,
 )
+from app.services.cohort_signal import CohortSignalUnavailableError
 from app.services.geo import GeoIPDatabaseUnavailableError
 from app.services.ml_runtime import MLSignalError
 from app.services.risk_pipeline import (
@@ -54,6 +55,7 @@ def score_session(payload: SessionScoreRequest) -> SessionScoreResponse:
         RiskPipelineUnavailableError,
         MLSignalError,
         UserBaselineUnavailableError,
+        CohortSignalUnavailableError,
     ) as exc:
         # Infrastructure unavailable -> 503. The full underlying exception
         # (including driver SQL/constraint details) is logged server-side only.

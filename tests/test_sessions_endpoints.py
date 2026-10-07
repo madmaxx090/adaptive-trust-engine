@@ -56,6 +56,12 @@ def cleanup_user(user_id: str) -> None:
             db.execute(delete(User).where(User.id == user.id))
             db.commit()
     _redis.delete(f"ate:login_burst:{user_id}")
+    # The cohort signal files this user_id under every device fingerprint and
+    # token hash it used; those keys cannot be derived from the user id alone,
+    # so scan the prefix and withdraw the user from each set. Without this the
+    # distinct-account counts leak between tests (they share fingerprints).
+    for cohort_key in _redis.scan_iter(match="ate:cohort:*", count=500):
+        _redis.zrem(cohort_key, user_id)
     keys: list[str] = []
     for session_id in session_ids:
         keys.extend(
@@ -427,6 +433,8 @@ def test_session_detail_matches_persisted_after_score(user_id: str) -> None:
         "user_baseline_status",
         "device_seen_before_count",
         "geo_velocity_user_percentile",
+        "device_cohort_user_count",
+        "token_cohort_user_count",
     }
     # The additive ML signal is now persisted with the risk event, so this
     # endpoint reports exactly what the scoring response returned.
@@ -501,6 +509,10 @@ def test_session_detail_returns_latest_event_and_full_history(user_id: str) -> N
     assert body["contributing_signals"]["user_baseline_status"] is None
     assert body["contributing_signals"]["device_seen_before_count"] is None
     assert body["contributing_signals"]["geo_velocity_user_percentile"] is None
+    # And for the additive cross-account cohort keys: these rows predate it too,
+    # so they read as unknown (null) rather than a fabricated count of 1.
+    assert body["contributing_signals"]["device_cohort_user_count"] is None
+    assert body["contributing_signals"]["token_cohort_user_count"] is None
     # History lists every event, chronological ascending.
     history = body["history"]
     assert [entry["event"] for entry in history] == ["risk_scored", "risk_scored"]

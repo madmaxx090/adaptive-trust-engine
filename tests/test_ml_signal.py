@@ -373,6 +373,11 @@ def test_normal_low_risk_session_both_signals_low(
         "user_baseline_status": "ok",
         "device_seen_before_count": 1,
         "geo_velocity_user_percentile": None,
+        # Additive cross-account cohort: this user is the only account on this
+        # fingerprint in the window (count includes the current request), and no
+        # refresh token was presented so there is nothing to count for the token.
+        "device_cohort_user_count": 1,
+        "token_cohort_user_count": None,
     }
     assert body["risk_tier"] == "low"
     _assert_score_consistent(body)
@@ -476,7 +481,8 @@ def test_ml_failure_returns_503_without_internal_details(
 def test_score_response_has_exact_expected_keys(user_id: str) -> None:
     """Additive-only contract: the established keys stay unchanged, the two ML
     keys are the only additions to the response body, and the three per-user
-    baseline keys are the only additions to contributing_signals."""
+    baseline keys plus the two cross-account cohort keys are the only additions
+    to contributing_signals."""
     response = client.post("/session/score", json=_payload(user_id))
     assert response.status_code == 200
     body = response.json()
@@ -497,6 +503,8 @@ def test_score_response_has_exact_expected_keys(user_id: str) -> None:
         "user_baseline_status",
         "device_seen_before_count",
         "geo_velocity_user_percentile",
+        "device_cohort_user_count",
+        "token_cohort_user_count",
     }
     assert isinstance(body["ml_anomaly_flag"], bool)
     assert isinstance(body["ml_decision_score"], float)

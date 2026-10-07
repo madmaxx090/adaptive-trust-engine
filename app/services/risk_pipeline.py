@@ -6,11 +6,13 @@ One pass per request, in this exact order:
     -> frozen baseline scorer (imported, unmodified)
     -> ML signal (Isolation Forest, loaded once at startup)
     -> per-user adaptive baseline (historical aggregates, additive only)
+    -> cross-account cohort signal (shared device/token, additive only)
     -> persist to Postgres (commit first) -> update Redis state (after commit)
     -> response
 
-The ML signal and the per-user baseline are both computed outside the frozen
-scorer and reported alongside it; neither is fused into the risk score.
+The ML signal, the per-user baseline and the cohort signal are all computed
+outside the frozen scorer and reported alongside it; none is fused into the
+risk score.
 
 Failure policy:
 - Postgres unavailable (history read, baseline read, or persistence), including
@@ -24,10 +26,14 @@ Failure policy:
   durable in Postgres (the source of truth); the next request self-heals from
   Postgres, and failing a committed request would invite duplicate retries.
 
-The login-burst sorted set is written during signal computation by nature: a
-rolling window cannot count the current attempt without recording it. The
-burst therefore counts scoring attempts, even if the later database write
-fails (attempts are what matter for bursts).
+The login-burst and cohort sorted sets are written during signal computation,
+before the Postgres commit, so both count scoring ATTEMPTS even when the later
+database write fails. That is intended: attempts are what matter for a burst,
+and a failed login from a device other accounts have already used is precisely
+what the cohort signal exists to surface. The two differ in when they write --
+the burst must record the current attempt in order to count it, while the cohort
+deliberately reads BEFORE writing so a returning account is counted once rather
+than accumulating a peer per visit.
 """
 
 import hashlib
@@ -48,6 +54,7 @@ from app.core.database import SessionLocal
 from app.models import AuditLog, RiskEvent, Session, User
 from app.services import geo
 from app.services.baseline_scorer import score_session as frozen_score_session
+from app.services.cohort_signal import compute_cohort_signal
 from app.services.ml_runtime import ml_runtime
 from app.services.session_store import (
     store_refresh_token_hash,
@@ -136,6 +143,20 @@ def process_session_score(
         current_velocity_kmh=velocity_kmh,
     )
 
+    # Cross-account cohort signal (app/services/cohort_signal.py). Additive only.
+    # It reads the cohort set before recording this request, so the count
+    # reflects the accounts already seen on this fingerprint/token and this
+    # request is then added exactly once -- a returning account never inflates
+    # its own cohort, and a lone account always reports 1. Unlike every other
+    # signal in this pipeline it looks ACROSS user_ids (how many distinct
+    # accounts share this device fingerprint or this refresh-token hash) rather
+    # than at one user's history.
+    cohort = compute_cohort_signal(
+        user_id=user_id,
+        device_fingerprint=device_fingerprint,
+        token_hash=token_hash,
+    )
+
     contributing_signals: dict[str, Any] = {
         "geo_velocity_kmh": velocity_kmh,
         "geo_location_status": geo_status,
@@ -145,6 +166,8 @@ def process_session_score(
         "user_baseline_status": user_baseline.status,
         "device_seen_before_count": user_baseline.device_seen_before_count,
         "geo_velocity_user_percentile": user_baseline.geo_velocity_user_percentile,
+        "device_cohort_user_count": cohort.device_cohort_user_count,
+        "token_cohort_user_count": cohort.token_cohort_user_count,
     }
 
     # risk_score is an int per the API/DB contract: rounded from the unrounded

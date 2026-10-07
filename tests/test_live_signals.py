@@ -63,6 +63,12 @@ def cleanup_user(user_id: str) -> None:
             db.execute(delete(User).where(User.id == user.id))
             db.commit()
     _redis.delete(f"ate:login_burst:{user_id}")
+    # The cohort signal files this user_id under every device fingerprint and
+    # token hash it used; those keys cannot be derived from the user id alone,
+    # so scan the prefix and withdraw the user from each set. Without this the
+    # distinct-account counts leak between tests (they share fingerprints).
+    for cohort_key in _redis.scan_iter(match="ate:cohort:*", count=500):
+        _redis.zrem(cohort_key, user_id)
     keys: list[str] = []
     for session_id in session_ids:
         keys.extend(
@@ -175,6 +181,10 @@ def test_first_ever_session(user_id: str) -> None:
         "user_baseline_status": "no_history",
         "device_seen_before_count": 0,
         "geo_velocity_user_percentile": None,
+        # Additive cross-account cohort: no other account has used this
+        # fingerprint in the window, and no refresh token was presented.
+        "device_cohort_user_count": 1,
+        "token_cohort_user_count": None,
     }
     assert body["risk_tier"] == "low"
     assert isinstance(body["session_id"], str) and body["session_id"]
